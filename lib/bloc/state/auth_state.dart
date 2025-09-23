@@ -1,0 +1,1 @@
+enum AuthState { splash, authenticated, unauthenticated, loginLoading }
