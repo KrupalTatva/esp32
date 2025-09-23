@@ -1,3 +1,6 @@
+import 'dart:math';
+
+import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 class PrefsService {
@@ -17,6 +20,9 @@ class PrefsService {
     await _prefs?.setBool(_isLoggedInKey, value);
     if (token != null) {
       await _prefs?.setString(_userTokenKey, token);
+    }
+    if (kDebugMode) {
+      print("Token saved : $isLoggedIn, token $userToken");
     }
   }
 

@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
 import '../../service/preference_service.dart';
@@ -10,7 +11,9 @@ class AuthCubit extends Cubit<AuthState> {
   void checkAuthStatus() async {
     // Always show splash for 3 seconds
     await Future.delayed(Duration(seconds: 1));
-
+    if (kDebugMode) {
+      print("is user login ${PrefsService.isLoggedIn}");
+    }
     if (PrefsService.isLoggedIn) {
       emit(AuthState.authenticated);
     } else {
