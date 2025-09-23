@@ -3,12 +3,14 @@ import 'package:flutter/material.dart';
 
 import '../screen/dashboard_screen.dart';
 import '../screen/login_screen.dart';
+import '../screen/reminder_screeen.dart';
 
 class AppRouter {
   static const String login = '/login';
   static const String dashboard = '/dashboard';
   static const String profile = '/profile';
   static const String createAccount = '/createAccount';
+  static const String setReminderScreen = '/setReminderScreen';
 
   static Route<dynamic> onGenerateRoute(RouteSettings settings) {
     switch (settings.name) {
@@ -18,6 +20,8 @@ class AppRouter {
         return MaterialPageRoute(builder: (_) => DashboardScreen());
       case createAccount:
         return MaterialPageRoute(builder: (_) => CreateAccountScreen());
+      case setReminderScreen:
+        return MaterialPageRoute(builder: (_) => WaterReminderScreen());
       default:
         return MaterialPageRoute(
           builder: (_) => Scaffold(

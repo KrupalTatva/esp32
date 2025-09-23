@@ -150,10 +150,10 @@ class DashboardScreen extends StatelessWidget {
                     children: [
                       _buildActionCard('Profile', Icons.person, () {}),
                       _buildActionCard('Settings', Icons.settings, () {}),
+                      _buildActionCard('Set Reminder', Icons.alarm, () {
+                        Navigator.pushNamed(context, AppRouter.setReminderScreen);
+                      }),
                       _buildActionCard('Analytics', Icons.analytics, () {}),
-                      _buildActionCard('Help', Icons.help, () {}),
-                      _buildActionCard('Analytics', Icons.analytics, () {}),
-                      _buildActionCard('Help', Icons.help, () {}),
                     ],
                   ),
                 ],
