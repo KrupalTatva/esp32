@@ -9,7 +9,7 @@ class WaterReminderLoaded extends BaseState {
 
   const WaterReminderLoaded({
     required this.isReminderActive,
-    required this.selectedInterval,
+    this.selectedInterval = 1,
     required this.todayWaterGlasses,
     required this.dailyGoal,
     required this.availableIntervals,

@@ -52,7 +52,7 @@ class NotificationService {
   static Future<void> _requestNotificationPermission() async {
     final status = await Permission.notification.request();
     if (status != PermissionStatus.granted) {
-      print('Notification permission denied');
+      throw Exception("permission denied");
     }
   }
 
@@ -84,13 +84,13 @@ class NotificationService {
       priority: Priority.defaultPriority,
       ticker: 'Water Reminder',
       icon: '@mipmap/ic_launcher',
-      actions: <AndroidNotificationAction>[
-        AndroidNotificationAction(
-          'mark_consumed',
-          'I drank water ✓',
-          titleColor: Color.fromARGB(255, 0, 150, 255),
-        ),
-      ],
+      // actions: <AndroidNotificationAction>[
+      //   AndroidNotificationAction(
+      //     'mark_consumed',
+      //     'I drank water ✓',
+      //     titleColor: Color.fromARGB(255, 0, 150, 255),
+      //   ),
+      // ],
     );
 
     const DarwinNotificationDetails iOSPlatformChannelSpecifics =

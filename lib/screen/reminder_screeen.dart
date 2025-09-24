@@ -79,7 +79,7 @@ class WaterReminderView extends StatelessWidget {
 
   Widget _buildBody(BuildContext context, BaseState state) {
     if (state is LoadingState) {
-      return const SingleChildScrollView(
+      return Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
@@ -222,30 +222,40 @@ class WaterReminderView extends StatelessWidget {
             const SizedBox(height: 16),
 
             Text(
-              'Remind me every:',
+              'Remind me every: ${(state.selectedInterval > 0 ? state.selectedInterval : state.availableIntervals.first)} hour${state.selectedInterval > 1 ? 's' : ''}',
               style: Theme.of(context).textTheme.titleMedium,
             ),
 
             const SizedBox(height: 8),
-
-            DropdownButtonFormField<int>(
-              value: state.selectedInterval,
-              decoration: InputDecoration(
-                border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-                contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-              ),
-              items: state.availableIntervals.map((int value) {
-                return DropdownMenuItem<int>(
-                  value: value,
-                  child: Text('$value hour${value > 1 ? 's' : ''}'),
-                );
-              }).toList(),
-              onChanged: (int? newValue) {
-                if (newValue != null) {
-                  context.read<WaterReminderCubit>().updateSelectedInterval(newValue);
-                }
+            Slider(
+              value: (state.selectedInterval > 0 ? state.selectedInterval : state.availableIntervals.first).toDouble(),
+              min: state.availableIntervals.first.toDouble(),
+              max: state.availableIntervals.last.toDouble(),
+              divisions: state.availableIntervals.length - 1,
+              label: '${state.selectedInterval} hour${state.selectedInterval > 1 ? 's' : ''}',
+              onChanged: (double value) {
+                context.read<WaterReminderCubit>().updateSelectedInterval(value.round());
               },
             ),
+
+            // DropdownButtonFormField<int>(
+            //   value: state.selectedInterval,
+            //   decoration: InputDecoration(
+            //     border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+            //     contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            //   ),
+            //   items: state.availableIntervals.map((int value) {
+            //     return DropdownMenuItem<int>(
+            //       value: value,
+            //       child: Text('$value hour${value > 1 ? 's' : ''}'),
+            //     );
+            //   }).toList(),
+            //   onChanged: (int? newValue) {
+            //     if (newValue != null) {
+            //       context.read<WaterReminderCubit>().updateSelectedInterval(newValue);
+            //     }
+            //   },
+            // ),
 
             const SizedBox(height: 20),
 

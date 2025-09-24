@@ -10,8 +10,9 @@ class SplashScreen extends StatelessWidget {
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             Container(
-              width: 100,
-              height: 100,
+              width: 140,
+              height: 140,
+              clipBehavior: Clip.hardEdge,
               decoration: BoxDecoration(
                 color: Colors.white,
                 borderRadius: BorderRadius.circular(20),
@@ -23,15 +24,15 @@ class SplashScreen extends StatelessWidget {
                   ),
                 ],
               ),
-              child: Image.network(
-                'https://cdn-icons-png.flaticon.com/512/3176/3176363.png',
+              child: Image(
+                image: AssetImage("assets/image/logo.png"),
                 width: 60,
                 height: 60,
                 errorBuilder: (context, error, stackTrace) => Icon(
-                  Icons.flash_on,
+                  Icons.water_drop,
                   color: Color(0xFF6366F1),
                   size: 50,
-                ),
+                ), 
               ),
             ),
             SizedBox(height: 30),
