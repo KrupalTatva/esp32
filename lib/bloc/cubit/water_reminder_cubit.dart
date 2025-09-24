@@ -1,13 +1,13 @@
 import 'package:esp/base/base_state.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
-import '../../service/WaterReminderService.dart';
+import '../../service/water_reminder_worker.dart';
 import '../../service/notification_service.dart';
 import '../state/water_reminder_state.dart';
 
 class WaterReminderCubit extends Cubit<BaseState> {
   WaterReminderCubit() : super(BaseInitState());
 
-  static const List<int> _availableIntervals = [1, 2, 3, 4, 5, 6, 7, 8];
+  static const List<int> _availableIntervals = [15, 30, 60, 120, 180, 240, 300, 360, 420, 480];
   static const int _defaultDailyGoal = 8; // 8 glasses of water per day
 
   Future<void> initializeApp() async {

@@ -1,6 +1,7 @@
 import 'package:esp/screen/create_account_screen.dart';
 import 'package:flutter/material.dart';
 
+import '../screen/ble_connection_screen.dart';
 import '../screen/dashboard_screen.dart';
 import '../screen/login_screen.dart';
 import '../screen/reminder_screeen.dart';
@@ -11,6 +12,7 @@ class AppRouter {
   static const String profile = '/profile';
   static const String createAccount = '/createAccount';
   static const String setReminderScreen = '/setReminderScreen';
+  static const String trackingScreen = '/trackingScreen';
 
   static Route<dynamic> onGenerateRoute(RouteSettings settings) {
     switch (settings.name) {
@@ -22,6 +24,8 @@ class AppRouter {
         return MaterialPageRoute(builder: (_) => CreateAccountScreen());
       case setReminderScreen:
         return MaterialPageRoute(builder: (_) => WaterReminderScreen());
+      case trackingScreen:
+        return MaterialPageRoute(builder: (_) => BleConnectionScreen());
       default:
         return MaterialPageRoute(
           builder: (_) => Scaffold(

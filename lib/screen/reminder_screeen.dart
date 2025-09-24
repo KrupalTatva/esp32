@@ -179,17 +179,17 @@ class WaterReminderView extends StatelessWidget {
               ),
             ),
 
-            const SizedBox(height: 16),
-            ElevatedButton.icon(
-              onPressed: () => context.read<WaterReminderCubit>().markWaterConsumed(),
-              icon: const Icon(Icons.add),
-              label: const Text('I drank water'),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: AppColors.primary,
-                foregroundColor: Colors.white,
-                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-              ),
-            ),
+            // const SizedBox(height: 16),
+            // ElevatedButton.icon(
+            //   onPressed: () => context.read<WaterReminderCubit>().markWaterConsumed(),
+            //   icon: const Icon(Icons.add),
+            //   label: const Text('I drank water'),
+            //   style: ElevatedButton.styleFrom(
+            //     backgroundColor: AppColors.primary,
+            //     foregroundColor: Colors.white,
+            //     padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+            //   ),
+            // ),
           ],
         ),
       ),
@@ -222,24 +222,29 @@ class WaterReminderView extends StatelessWidget {
             const SizedBox(height: 16),
 
             Text(
-              'Remind me every: ${(state.selectedInterval > 0 ? state.selectedInterval : state.availableIntervals.first)} hour${state.selectedInterval > 1 ? 's' : ''}',
+              'Remind me every: ${formattedInterval(state.selectedInterval > 0 ? state.selectedInterval : state.availableIntervals.first)}',
               style: Theme.of(context).textTheme.titleMedium,
             ),
 
             const SizedBox(height: 8),
             Slider(
-              value: (state.selectedInterval > 0 ? state.selectedInterval : state.availableIntervals.first).toDouble(),
-              min: state.availableIntervals.first.toDouble(),
-              max: state.availableIntervals.last.toDouble(),
+              value: state.availableIntervals.contains(state.selectedInterval)
+                  ? state.availableIntervals.indexOf(state.selectedInterval).toDouble()
+                  : 0, // fallback to first element
+              min: 0,
+              max: (state.availableIntervals.length - 1).toDouble(),
               divisions: state.availableIntervals.length - 1,
-              label: '${state.selectedInterval} hour${state.selectedInterval > 1 ? 's' : ''}',
+              label: formattedInterval(state.selectedInterval > 0 ? state.selectedInterval : state.availableIntervals.first),
               onChanged: (double value) {
-                context.read<WaterReminderCubit>().updateSelectedInterval(value.round());
+                int index = value.round();
+                context
+                    .read<WaterReminderCubit>()
+                    .updateSelectedInterval(state.availableIntervals[index]);
               },
             ),
 
             // DropdownButtonFormField<int>(
-            //   value: state.selectedInterval,
+            //   initialValue: state.selectedInterval,
             //   decoration: InputDecoration(
             //     border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
             //     contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
@@ -247,7 +252,7 @@ class WaterReminderView extends StatelessWidget {
             //   items: state.availableIntervals.map((int value) {
             //     return DropdownMenuItem<int>(
             //       value: value,
-            //       child: Text('$value hour${value > 1 ? 's' : ''}'),
+            //       child: Text(formattedInterval(value)),
             //     );
             //   }).toList(),
             //   onChanged: (int? newValue) {
@@ -299,6 +304,15 @@ class WaterReminderView extends StatelessWidget {
         ),
       ),
     );
+  }
+
+  String formattedInterval(int selectedMinutes) {
+    if (selectedMinutes < 60) {
+      return "$selectedMinutes mins";
+    } else {
+      int hours = selectedMinutes ~/ 60;
+      return "$hours hour${hours > 1 ? 's' : ''}";
+    }
   }
 
   Widget _buildStatusIndicator(BuildContext context, WaterReminderLoaded state) {

@@ -6,19 +6,19 @@ class WaterReminderService {
   static const String taskName = 'waterReminderTask';
   static const String uniqueName = 'waterReminderWork';
 
-  static Future<void> startWaterReminder(int intervalHours) async {
+  static Future<void> startWaterReminder(int intervalMin) async {
     // Cancel existing work
     await stopWaterReminder();
 
     // Save reminder settings
-    await _saveReminderSettings(intervalHours, true);
+    await _saveReminderSettings(intervalMin, true);
 
     // Register periodic task
     await Workmanager().registerPeriodicTask(
       uniqueName,
       taskName,
       initialDelay: Duration(seconds: 15),
-      frequency: Duration(hours: intervalHours),
+      frequency: Duration(minutes: intervalMin),
       constraints: Constraints(
         networkType: NetworkType.notRequired,
         requiresBatteryNotLow: false,
@@ -27,12 +27,12 @@ class WaterReminderService {
         requiresStorageNotLow: false,
       ),
       inputData: {
-        'intervalHours': intervalHours,
+        'intervalMinutes': intervalMin,
         'startTime': DateTime.now().millisecondsSinceEpoch,
       },
     );
 
-    print('Water reminder started with ${intervalHours}h interval');
+    print('Water reminder started with ${intervalMin}min interval');
   }
 
   static Future<void> stopWaterReminder() async {
@@ -51,9 +51,9 @@ class WaterReminderService {
     return prefs.getInt('reminder_interval') ?? 1;
   }
 
-  static Future<void> _saveReminderSettings(int intervalHours, bool isActive) async {
+  static Future<void> _saveReminderSettings(int intervalMin, bool isActive) async {
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setInt('reminder_interval', intervalHours);
+    await prefs.setInt('reminder_interval', intervalMin);
     await prefs.setBool('reminder_active', isActive);
   }
 

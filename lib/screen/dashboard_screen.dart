@@ -149,7 +149,9 @@ class DashboardScreen extends StatelessWidget {
                     shrinkWrap: true,
                     children: [
                       _buildActionCard('Profile', Icons.person, () {}),
-                      _buildActionCard('Settings', Icons.settings, () {}),
+                      _buildActionCard('Start tracking', Icons.track_changes, () {
+                        Navigator.pushNamed(context, AppRouter.trackingScreen);
+                      }),
                       _buildActionCard('Set Reminder', Icons.alarm, () {
                         Navigator.pushNamed(context, AppRouter.setReminderScreen);
                       }),
