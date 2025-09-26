@@ -4,10 +4,25 @@ import 'package:esp/router/AppRouter.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
+import '../bloc/cubit/ble_cubit.dart';
+import '../bloc/state/ble_state.dart';
+import '../component/device_info.dart';
 import '../component/gradient_progressbar.dart';
 
-class DashboardScreen extends StatelessWidget {
+class DashboardScreen extends StatefulWidget {
+  @override
+  State<DashboardScreen> createState() => _DashboardScreenState();
+}
+
+class _DashboardScreenState extends State<DashboardScreen> {
   var dashboardCubit =  DashboardCubit();
+
+  @override
+  void initState() {
+    // TODO: implement initState
+    super.initState();
+  }
+
   @override
   Widget build(BuildContext context) {
     return BlocBuilder(
@@ -20,9 +35,14 @@ class DashboardScreen extends StatelessWidget {
             title: Row(
               children: [
                 // Logo icon
-                Icon(Icons.water_drop, color: Colors.white),
+                Image.asset(
+                  "assets/image/bottle_logo.png", // replace with your asset path
+                  height: 32, // adjust size as needed
+                  width: 32,
+                  fit: BoxFit.contain,
+                ),
 
-                const SizedBox(width: 8),
+                const SizedBox(width: 4),
 
                 // App name
                 const Text(
@@ -130,7 +150,20 @@ class DashboardScreen extends StatelessWidget {
                   ),
 
                   SizedBox(height: 24),
-
+                  Text(
+                    'Device info',
+                    style: TextStyle(
+                      fontSize: 20,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  SizedBox(height: 16),
+                  DeviceInfoCard(
+                    name: "MyBottle",
+                    id: "AA:BB:CC:DD:EE:FF",
+                    batteryLevel: 0,
+                  ),
+                  SizedBox(height: 24),
                   Text(
                     'Quick Actions',
                     style: TextStyle(
@@ -148,14 +181,16 @@ class DashboardScreen extends StatelessWidget {
                     physics: NeverScrollableScrollPhysics(),
                     shrinkWrap: true,
                     children: [
-                      _buildActionCard('Profile', Icons.person, () {}),
+                      // _buildActionCard('Profile', Icons.person, () {
+                      //   Navigator.pushNamed(context, AppRouter.createAccount);
+                      // }),
                       _buildActionCard('Start tracking', Icons.track_changes, () {
                         Navigator.pushNamed(context, AppRouter.trackingScreen);
                       }),
                       _buildActionCard('Set Reminder', Icons.alarm, () {
                         Navigator.pushNamed(context, AppRouter.setReminderScreen);
                       }),
-                      _buildActionCard('Analytics', Icons.analytics, () {}),
+                      // _buildActionCard('Device info', Icons.microwave_sharp, () {}),
                     ],
                   ),
                 ],

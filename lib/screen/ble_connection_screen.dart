@@ -1,9 +1,12 @@
+import 'package:esp/component/Color.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:permission_handler/permission_handler.dart';
 
 import '../bloc/cubit/ble_cubit.dart';
 import '../bloc/state/ble_state.dart';
 import '../model/ble_model.dart';
+import '../service/bluetooth_background_worker.dart';
 import '../service/bluetooth_service.dart' hide BleData;
 
 class BleConnectionScreen extends StatefulWidget {
@@ -32,9 +35,21 @@ class _BleConnectionScreenState extends State<BleConnectionScreen>
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.resumed) {
-      // bleCubit.checkStatus();
-    }
+      switch (state) {
+        case AppLifecycleState.paused:
+        case AppLifecycleState.inactive:
+          if (BluetoothService.instance.isTracking) {
+            BackgroundWorker.startBackgroundTask();
+          }
+          break;
+
+        case AppLifecycleState.resumed:
+          BackgroundWorker.stopBackgroundTask();
+          break;
+
+        default:
+          break;
+      }
   }
 
   @override
@@ -42,7 +57,7 @@ class _BleConnectionScreenState extends State<BleConnectionScreen>
     return Scaffold(
       appBar: AppBar(
         title: const Text('BLE ESP32 Connection'),
-        backgroundColor: Colors.blue.shade700,
+        backgroundColor: AppColors.primary,
         foregroundColor: Colors.white,
         actions: [
           IconButton(
@@ -131,7 +146,7 @@ class _BleConnectionScreenState extends State<BleConnectionScreen>
             ? "Connected to ${state.deviceName}"
             : "Connected to ESP32";
         subtitle = "Ready to track";
-        color = Colors.blue;
+        color = AppColors.primary;
         break;
       case BleConnectionState.tracking:
         icon = Icons.bluetooth_connected;
@@ -146,6 +161,12 @@ class _BleConnectionScreenState extends State<BleConnectionScreen>
         title = "Connecting...";
         subtitle = "Please wait";
         color = Colors.orange;
+        break;
+      case BleConnectionState.permanentlyPermissionDenied:
+        icon = Icons.block;
+        title = "This feature needs Bluetooth & Location permissions.";
+        subtitle = "Please enable them from app settings.";
+        color = Colors.red;
         break;
     }
 
@@ -216,7 +237,7 @@ class _BleConnectionScreenState extends State<BleConnectionScreen>
               icon: const Icon(Icons.bluetooth),
               label: const Text("Check Bluetooth Status"),
               style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.blue,
+                backgroundColor: AppColors.primary,
                 foregroundColor: Colors.white,
                 padding: const EdgeInsets.symmetric(vertical: 12),
               ),
@@ -245,6 +266,20 @@ class _BleConnectionScreenState extends State<BleConnectionScreen>
           ),
         );
 
+      case BleConnectionState.permanentlyPermissionDenied:
+        return ElevatedButton.icon(
+          onPressed: () async {
+            await openAppSettings();
+          },
+          icon: const Icon(Icons.refresh),
+          label: const Text("Open Settings"),
+          style: ElevatedButton.styleFrom(
+            backgroundColor: Colors.red,
+            foregroundColor: Colors.white,
+            padding: const EdgeInsets.symmetric(vertical: 12),
+          ),
+        );
+
       case BleConnectionState.disconnected:
         return Column(
           children: [
@@ -253,18 +288,18 @@ class _BleConnectionScreenState extends State<BleConnectionScreen>
               icon: const Icon(Icons.refresh),
               label: const Text("Check for Connected Devices"),
               style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.blue,
+                backgroundColor: AppColors.primary,
                 foregroundColor: Colors.white,
-                padding: const EdgeInsets.symmetric(vertical: 12),
+                padding: const EdgeInsets.all(12),
               ),
             ),
             const SizedBox(height: 12),
             Container(
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
-                color: Colors.blue.shade50,
+                color: AppColors.primaryLow,
                 borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: Colors.blue.shade200),
+                border: Border.all(color: AppColors.primary,),
               ),
               child: Column(
                 children: [
@@ -272,7 +307,7 @@ class _BleConnectionScreenState extends State<BleConnectionScreen>
                     children: [
                       Icon(
                         Icons.info_outline,
-                        color: Colors.blue.shade600,
+                        color: AppColors.primary,
                         size: 20,
                       ),
                       const SizedBox(width: 8),
@@ -280,7 +315,7 @@ class _BleConnectionScreenState extends State<BleConnectionScreen>
                         "How to connect:",
                         style: TextStyle(
                           fontWeight: FontWeight.bold,
-                          color: Colors.blue.shade800,
+                          color: AppColors.primary,
                         ),
                       ),
                     ],
@@ -288,7 +323,7 @@ class _BleConnectionScreenState extends State<BleConnectionScreen>
                   const SizedBox(height: 8),
                   Text(
                     "1. Go to your device's Bluetooth settings\n2. Pair with your ESP32 device\n3. Come back and tap 'Check for Connected Devices'",
-                    style: TextStyle(color: Colors.blue.shade700),
+                    style: TextStyle(color: AppColors.primary),
                   ),
                 ],
               ),

@@ -61,6 +61,7 @@ class WaterReminderView extends StatelessWidget {
         },
         builder: (context, state) {
           return Container(
+            height: double.maxFinite,
             decoration: const BoxDecoration(
               gradient: LinearGradient(
                 begin: Alignment.topCenter,
@@ -123,7 +124,7 @@ class WaterReminderView extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             // Water intake progress card
-            _buildWaterIntakeCard(context, state),
+            // _buildWaterIntakeCard(context, state),
 
             const SizedBox(height: 20),
 
@@ -324,7 +325,7 @@ class WaterReminderView extends StatelessWidget {
             : Colors.grey.withOpacity(0.1),
         borderRadius: BorderRadius.circular(8),
         border: Border.all(
-          color: state.isReminderActive ? Colors.green : Colors.grey,
+          color: state.isReminderActive ? Colors.green : AppColors.primary,
           width: 1,
         ),
       ),
@@ -333,7 +334,7 @@ class WaterReminderView extends StatelessWidget {
         children: [
           Icon(
             state.isReminderActive ? Icons.check_circle : Icons.pause_circle,
-            color: state.isReminderActive ? Colors.green : Colors.grey,
+            color: state.isReminderActive ? Colors.green : AppColors.primary,
           ),
           const SizedBox(width: 8),
           Flexible(
@@ -342,7 +343,7 @@ class WaterReminderView extends StatelessWidget {
                   ? 'Reminder is active (every ${state.selectedInterval} hour${state.selectedInterval > 1 ? 's' : ''})'
                   : 'Reminder is inactive',
               style: TextStyle(
-                color: state.isReminderActive ? Colors.green : Colors.grey,
+                color: state.isReminderActive ? Colors.green : AppColors.primary,
                 fontWeight: FontWeight.bold,
               ),
               textAlign: TextAlign.center,

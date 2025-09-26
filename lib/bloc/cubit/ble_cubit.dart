@@ -63,6 +63,9 @@ class BleCubit extends Cubit<BleState> {
     emit(state.copyWith(isLoading: true, clearError: true));
 
     try {
+      checkStatus();
+      // _bluetoothService.restoreState();
+
       final currentData = _bluetoothService.getCurrentData();
       emit(state.copyWith(
         receivedData: currentData,
@@ -92,7 +95,7 @@ class BleCubit extends Cubit<BleState> {
 
     final success = await _bluetoothService.startTracking();
     if (success) {
-      await BackgroundWorker.startBackgroundTask();
+      // await BackgroundWorker.startBackgroundTask();
     }
   }
 

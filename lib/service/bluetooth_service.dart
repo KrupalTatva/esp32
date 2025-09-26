@@ -3,15 +3,19 @@ import 'dart:convert';
 import 'dart:isolate';
 import 'dart:ui';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:permission_handler/permission_handler.dart';
+import 'package:flutter/material.dart';
 
 import '../model/ble_model.dart';
 
 enum BleConnectionState {
   checking,
   permissionDenied,
+  permanentlyPermissionDenied,
   bluetoothOff,
   disconnected,
   connecting,
@@ -48,7 +52,7 @@ class BluetoothService {
 
   /// Entry point - Call this first to initialize the service
   Future<void> initialize() async {
-    await _restoreState();
+    await restoreState();
     _connectionStateController.add(BleConnectionState.checking);
     await checkBluetoothStatus();
   }
@@ -86,7 +90,7 @@ class BluetoothService {
   }
 
   /// Restore previous state from SharedPreferences (tracking state, device ID)
-  Future<void> _restoreState() async {
+  Future<void> restoreState() async {
     try {
       final prefs = await SharedPreferences.getInstance();
       _isTracking = prefs.getBool(_trackingKey) ?? false;
@@ -134,7 +138,6 @@ class BluetoothService {
       // Check permissions
       final hasPermissions = await _checkPermissions();
       if (!hasPermissions) {
-        _connectionStateController.add(BleConnectionState.permissionDenied);
         return false;
       }
 
@@ -154,6 +157,8 @@ class BluetoothService {
               : BleConnectionState.connected);
           return true;
         }
+      } else {
+        checkForConnectedDevices();
       }
 
       _connectionStateController.add(BleConnectionState.disconnected);
@@ -175,9 +180,16 @@ class BluetoothService {
 
     for (final permission in permissions) {
       final status = await permission.status;
+
       if (status != PermissionStatus.granted) {
         final result = await permission.request();
+
         if (result != PermissionStatus.granted) {
+          if (result.isPermanentlyDenied) {
+            _connectionStateController.add(BleConnectionState.permanentlyPermissionDenied);
+            return false;
+          }
+          _connectionStateController.add(BleConnectionState.permissionDenied);
           return false;
         }
       }
@@ -185,8 +197,9 @@ class BluetoothService {
     return true;
   }
 
+
   /// Connect to ESP32 device by scanning and connecting
-  Future<bool> connectToESP32() async {
+  /*Future<bool> connectToESP32() async {
     try {
       _connectionStateController.add(BleConnectionState.connecting);
 
@@ -232,7 +245,7 @@ class BluetoothService {
       _connectionStateController.add(BleConnectionState.disconnected);
       return false;
     }
-  }
+  }*/
 
   /// Setup device services and characteristics after connection
   Future<void> _setupDevice(BluetoothDevice device) async {
@@ -270,7 +283,7 @@ class BluetoothService {
       _connectionStateController.add(BleConnectionState.checking);
 
       // Get all connected system devices
-      final connectedDevices = await FlutterBluePlus.connectedSystemDevices;
+      final connectedDevices = await FlutterBluePlus.connectedDevices;
 
       if (connectedDevices.isEmpty) {
         _connectionStateController.add(BleConnectionState.disconnected);
