@@ -24,7 +24,6 @@ class _BleConnectionScreenState extends State<BleConnectionScreen>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    bleCubit.initialize();
   }
 
   @override
@@ -63,7 +62,7 @@ class _BleConnectionScreenState extends State<BleConnectionScreen>
           IconButton(
             icon: const Icon(Icons.refresh),
             onPressed: () {
-              bleCubit.checkStatus();
+              bleCubit.scanAndConnect();
               print('screen 1');
             },
           ),
@@ -156,7 +155,7 @@ class _BleConnectionScreenState extends State<BleConnectionScreen>
         subtitle = "Tracking active (${state.receivedData.length} data points)";
         color = Colors.green;
         break;
-      case BleConnectionState.connecting:
+      case BleConnectionState.scanning:
         icon = Icons.bluetooth_searching;
         title = "Connecting...";
         subtitle = "Please wait";
@@ -166,6 +165,12 @@ class _BleConnectionScreenState extends State<BleConnectionScreen>
         icon = Icons.block;
         title = "This feature needs Bluetooth & Location permissions.";
         subtitle = "Please enable them from app settings.";
+        color = Colors.red;
+        break;
+      case BleConnectionState.notFound:
+        icon = Icons.block;
+        title = "Device not found";
+        subtitle = "Something went wrong, Please check Bluetooth settings";
         color = Colors.red;
         break;
     }
@@ -231,7 +236,7 @@ class _BleConnectionScreenState extends State<BleConnectionScreen>
           children: [
             ElevatedButton.icon(
               onPressed: () {
-                bleCubit.checkStatus();
+                bleCubit.checkBluetoothStatus();
                 print('screen 2');
               },
               icon: const Icon(Icons.bluetooth),
@@ -254,7 +259,7 @@ class _BleConnectionScreenState extends State<BleConnectionScreen>
       case BleConnectionState.permissionDenied:
         return ElevatedButton.icon(
           onPressed: () {
-            bleCubit.checkStatus();
+            bleCubit.checkBluetoothStatus();
             print('screen 3');
           },
           icon: const Icon(Icons.refresh),
@@ -284,7 +289,7 @@ class _BleConnectionScreenState extends State<BleConnectionScreen>
         return Column(
           children: [
             ElevatedButton.icon(
-              onPressed: () => bleCubit.checkForDevices(),
+              onPressed: () => bleCubit.scanAndConnect(),
               icon: const Icon(Icons.refresh),
               label: const Text("Check for Connected Devices"),
               style: ElevatedButton.styleFrom(

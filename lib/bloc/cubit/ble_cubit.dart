@@ -11,121 +11,172 @@ import '../../service/bluetooth_service.dart';
 import '../state/ble_state.dart';
 
 class BleCubit extends Cubit<BleState> {
-  final BluetoothService _bluetoothService = BluetoothService.instance;
-  late StreamSubscription<BleConnectionState> _connectionSubscription;
-  late StreamSubscription<List<BleData>> _dataSubscription;
-  late StreamSubscription<String?> _errorSubscription;
-  ReceivePort? _receivePort;
+  final BluetoothService _service = BluetoothService.instance;
 
-  BleCubit() : super(const BleState(connectionState: BleConnectionState.checking)) {
-    _setupServiceListeners();
-    _setupIsolateListener();
+  StreamSubscription<BleConnectionState>? _stateSub;
+  StreamSubscription<List<BleData>>? _dataSub;
+  StreamSubscription<String?>? _errorSub;
+
+  BleCubit()
+      : super(const BleState(connectionState: BleConnectionState.checking)) {
+    _setupListeners();
+    _initialize();
   }
 
-  void _setupServiceListeners() {
-    _connectionSubscription = _bluetoothService.connectionState.listen(
-          (connectionState) {
-        final deviceName = _bluetoothService.connectedDevice?.platformName ??
-            _bluetoothService.connectedDevice?.advName;
+  // ============================================================
+  // Setup Listeners
+  // ============================================================
+  void _setupListeners() {
+    // Listen to connection state
+    _stateSub = _service.stateStream.listen((bleState) {
+      emit(state.copyWith(
+        connectionState: bleState,
+        deviceId: _service.deviceId,
+        deviceName: _service.deviceName,
+        isLoading: false,
+      ));
+    });
+
+    // Listen to data stream
+    _dataSub = _service.dataStream.listen((data) {
+      emit(state.copyWith(receivedData: data));
+    });
+
+    // Listen to errors
+    _errorSub = _service.errorStream.listen((error) {
+      if (error != null) {
         emit(state.copyWith(
-          connectionState: connectionState,
+          errorMessage: error,
           isLoading: false,
-          deviceName: deviceName,
         ));
-      },
-    );
-
-    _dataSubscription = _bluetoothService.dataStream.listen(
-          (data) => emit(state.copyWith(receivedData: data)),
-    );
-
-    _errorSubscription = _bluetoothService.errorStream.listen(
-          (error) {
-        if (error != null) {
-          emit(state.copyWith(errorMessage: error, isLoading: false));
-        }
-      },
-    );
-  }
-
-  void _setupIsolateListener() {
-    _receivePort = ReceivePort();
-    IsolateNameServer.registerPortWithName(_receivePort!.sendPort, 'ble_data_port');
-
-    _receivePort!.listen((data) {
-      if (data is Map && data['type'] == 'data') {
-        // Handle background data updates if needed
       }
     });
   }
 
-  Future<void> initialize() async {
+  // ============================================================
+  // Initialize - Restore previous state or check Bluetooth
+  // ============================================================
+  Future<void> _initialize() async {
     emit(state.copyWith(isLoading: true, clearError: true));
 
     try {
-      checkStatus();
-      // _bluetoothService.restoreState();
+      await _service.initialize();
 
-      final currentData = _bluetoothService.getCurrentData();
+      // Update UI with current device info
       emit(state.copyWith(
-        receivedData: currentData,
+        deviceId: _service.deviceId,
+        deviceName: _service.deviceName,
+        receivedData: _service.currentData,
         isLoading: false,
       ));
     } catch (e) {
       emit(state.copyWith(
-        errorMessage: "Failed to initialize: $e",
+        errorMessage: "Initialization failed: $e",
         isLoading: false,
       ));
     }
   }
 
-  Future<void> checkStatus() async {
+  // ============================================================
+  // Check Bluetooth Status (Permissions + Adapter)
+  // ============================================================
+  Future<void> checkBluetoothStatus() async {
     emit(state.copyWith(isLoading: true, clearError: true));
-    await _bluetoothService.checkBluetoothStatus();
-    print('cubit 1');
+    await _service.checkBluetoothStatus();
+    // State will be updated via stream listener
   }
 
-  Future<void> checkForDevices() async {
-    emit(state.copyWith(isLoading: true, clearError: true));
-    await _bluetoothService.checkForConnectedDevices();
-  }
-
-  Future<void> startTracking() async {
+  // ============================================================
+  // Scan and Connect to ESP32
+  // ============================================================
+  Future<void> scanAndConnect() async {
     emit(state.copyWith(isLoading: true, clearError: true));
 
-    final success = await _bluetoothService.startTracking();
+    final success = await _service.scanAndConnect();
+
     if (success) {
-      // await BackgroundWorker.startBackgroundTask();
+      emit(state.copyWith(
+        deviceId: _service.deviceId,
+        deviceName: _service.deviceName,
+        isLoading: false,
+      ));
+    } else {
+      emit(state.copyWith(
+        errorMessage: "Failed to connect to ESP32",
+        isLoading: false,
+      ));
     }
   }
 
+  // ============================================================
+  // Start Data Tracking
+  // ============================================================
+  Future<void> startTracking() async {
+    if (!state.isConnected) {
+      emit(state.copyWith(
+        errorMessage: "Device not connected",
+        isLoading: false,
+      ));
+      return;
+    }
+
+    emit(state.copyWith(isLoading: true, clearError: true));
+
+    final success = await _service.startTracking();
+
+    if (!success) {
+      emit(state.copyWith(
+        errorMessage: "Failed to start tracking",
+        isLoading: false,
+      ));
+    }
+  }
+
+  // ============================================================
+  // Stop Data Tracking
+  // ============================================================
   Future<void> stopTracking() async {
     emit(state.copyWith(isLoading: true, clearError: true));
 
-    final success = await _bluetoothService.stopTracking();
-    if (success) {
-      await BackgroundWorker.stopBackgroundTask();
+    final success = await _service.stopTracking();
+
+    if (!success) {
+      emit(state.copyWith(
+        errorMessage: "Failed to stop tracking",
+        isLoading: false,
+      ));
     }
   }
 
+  // ============================================================
+  // Disconnect from Device
+  // ============================================================
   Future<void> disconnect() async {
     emit(state.copyWith(isLoading: true, clearError: true));
 
-    await BackgroundWorker.stopBackgroundTask();
-    await _bluetoothService.disconnect();
+    await _service.disconnect();
+
+    emit(state.copyWith(
+      clearDeviceInfo: true,
+      isLoading: false,
+    ));
   }
 
+  // ============================================================
+  // Clear Error Message
+  // ============================================================
   void clearError() {
     emit(state.copyWith(clearError: true));
   }
 
+  // ============================================================
+  // Cleanup
+  // ============================================================
   @override
   Future<void> close() {
-    _connectionSubscription.cancel();
-    _dataSubscription.cancel();
-    _errorSubscription.cancel();
-    _receivePort?.close();
-    IsolateNameServer.removePortNameMapping('ble_data_port');
+    _stateSub?.cancel();
+    _dataSub?.cancel();
+    _errorSub?.cancel();
     return super.close();
   }
 }

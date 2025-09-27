@@ -1,15 +1,9 @@
 import 'dart:async';
 import 'dart:convert';
-import 'dart:isolate';
-import 'dart:ui';
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:permission_handler/permission_handler.dart';
-import 'package:flutter/material.dart';
-
 import '../model/ble_model.dart';
 
 enum BleConnectionState {
@@ -17,10 +11,11 @@ enum BleConnectionState {
   permissionDenied,
   permanentlyPermissionDenied,
   bluetoothOff,
-  disconnected,
-  connecting,
+  scanning,
+  notFound,
   connected,
   tracking,
+  disconnected,
 }
 
 class BluetoothService {
@@ -28,33 +23,125 @@ class BluetoothService {
   static BluetoothService get instance => _instance ??= BluetoothService._();
   BluetoothService._();
 
-  final _connectionStateController = StreamController<BleConnectionState>.broadcast();
-  final _dataStreamController = StreamController<List<BleData>>.broadcast();
-  final _errorStreamController = StreamController<String?>.broadcast();
+  // Streams
+  final _stateController = StreamController<BleConnectionState>.broadcast();
+  final _dataController = StreamController<List<BleData>>.broadcast();
+  final _errorController = StreamController<String?>.broadcast();
 
-  Stream<BleConnectionState> get connectionState => _connectionStateController.stream;
-  Stream<List<BleData>> get dataStream => _dataStreamController.stream;
-  Stream<String?> get errorStream => _errorStreamController.stream;
+  Stream<BleConnectionState> get stateStream => _stateController.stream;
+  Stream<List<BleData>> get dataStream => _dataController.stream;
+  Stream<String?> get errorStream => _errorController.stream;
 
-  BluetoothDevice? _connectedDevice;
-  BluetoothCharacteristic? _dataCharacteristic;
-  StreamSubscription<List<int>>? _dataSubscription;
-  StreamSubscription<BluetoothConnectionState>? _connectionSubscription;
-  Timer? _reconnectTimer;
+  // Device info
+  BluetoothDevice? _device;
+  BluetoothCharacteristic? _characteristic;
+  String? _deviceId;
+  String? _deviceName;
+
+  // State
   bool _isTracking = false;
-  List<BleData> _receivedData = [];
+  List<BleData> _data = [];
 
-  static const String serviceUUID = "4fafc201-1fb5-459e-8fcc-c5c9c331914b";
-  static const String characteristicUUID = "beb5483e-36e1-4688-b7f5-ea07361b26a8";
-  static const String esp32DeviceName = "ESP32";
-  static const String _trackingKey = 'is_tracking';
-  static const String _deviceIdKey = 'connected_device_id';
+  // Subscriptions
+  StreamSubscription<List<int>>? _dataSub;
+  StreamSubscription<BluetoothConnectionState>? _connSub;
+  StreamSubscription<List<ScanResult>>? _scanSub;
 
-  /// Entry point - Call this first to initialize the service
+  // Constants
+  static const serviceUUID = "4fafc201-1fb5-459e-8fcc-c5c9c331914b";
+  static const characteristicUUID = "beb5483e-36e1-4688-b7f5-ea07361b26a8";
+  static const esp32DeviceName = "ESP32";
+
+  // Getters
+  String? get deviceId => _deviceId;
+  String? get deviceName => _deviceName;
+  bool get isTracking => _isTracking;
+  List<BleData> get currentData => List.from(_data);
+
+  // ============================================================
+  // STEP 1: Initialize and restore state
+  // ============================================================
   Future<void> initialize() async {
-    await restoreState();
-    _connectionStateController.add(BleConnectionState.checking);
-    await checkBluetoothStatus();
+    _emit(BleConnectionState.checking);
+
+    final restored = await _restoreState();
+
+    if (!restored) {
+      // First time or no previous connection
+      // Check Bluetooth status and guide user
+      await checkBluetoothStatus();
+    }
+  }
+
+  Future<bool> _restoreState() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      _isTracking = prefs.getBool('is_tracking') ?? false;
+      _deviceId = prefs.getString('device_id');
+      _deviceName = prefs.getString('device_name');
+
+      // Check if we have previous device data
+      if (_deviceId != null && _deviceId!.isNotEmpty) {
+        final devices = await FlutterBluePlus.connectedSystemDevices;
+        _device = devices.where((d) => d.remoteId.str == _deviceId).firstOrNull;
+
+        if (_device != null) {
+          // Previous device is still connected
+          await _setupDevice();
+          if (_isTracking) await _startNotifications();
+          _emit(_isTracking ? BleConnectionState.tracking : BleConnectionState.connected);
+          return true; // Successfully restored
+        } else {
+          // Device ID exists but device not connected anymore
+          _emitError('Previous device not found. Please scan again.');
+        }
+      } else {
+        // First time - no previous device data
+        debugPrint('No previous device found. First time setup required.');
+      }
+    } catch (e) {
+      _emitError('Restore failed: $e');
+    }
+
+    // Either first time or restoration failed
+    return false;
+  }
+
+  // ============================================================
+  // STEP 2: Check Bluetooth Status (Support + Permissions)
+  // ============================================================
+  Future<bool> checkBluetoothStatus() async {
+    _emit(BleConnectionState.checking);
+
+    // Check support
+    if (!await FlutterBluePlus.isSupported) {
+      _emitError("Bluetooth not supported");
+      return false;
+    }
+
+    // Check permissions
+    if (!await _checkPermissions()) {
+      return false;
+    }
+
+    // Check adapter state
+    final state = await FlutterBluePlus.adapterState.first;
+    if (state != BluetoothAdapterState.on) {
+      _emit(BleConnectionState.bluetoothOff);
+      return false;
+    }
+
+    // Check if already connected
+    if (_device != null) {
+      final connState = await _device!.connectionState.first;
+      if (connState == BluetoothConnectionState.connected) {
+        _emit(_isTracking ? BleConnectionState.tracking : BleConnectionState.connected);
+        return true;
+      }
+    }
+
+    _emit(BleConnectionState.disconnected);
+    return true;
   }
 
   /// NEW METHOD: Request all required Bluetooth permissions
@@ -76,7 +163,7 @@ class BluetoothService {
         final status = statuses[permission] ?? await permission.status;
         if (status != PermissionStatus.granted) {
           _emitError("Permission ${permission.toString()} denied");
-          _connectionStateController.add(BleConnectionState.permissionDenied);
+          _emit(BleConnectionState.permissionDenied);
           return false;
         }
       }
@@ -85,86 +172,6 @@ class BluetoothService {
       return true;
     } catch (e) {
       _emitError("Error requesting permissions: $e");
-      return false;
-    }
-  }
-
-  /// Restore previous state from SharedPreferences (tracking state, device ID)
-  Future<void> restoreState() async {
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      _isTracking = prefs.getBool(_trackingKey) ?? false;
-      final deviceId = prefs.getString(_deviceIdKey);
-
-      if (deviceId != null && deviceId.isNotEmpty) {
-        final connectedDevices = await FlutterBluePlus.connectedSystemDevices;
-        _connectedDevice = connectedDevices.firstWhere(
-              (device) => device.remoteId.str == deviceId,
-          orElse: () => BluetoothDevice.fromId(''),
-        );
-
-        if (_connectedDevice?.remoteId.str.isNotEmpty == true) {
-          await _setupDevice(_connectedDevice!);
-          if (_isTracking) {
-            await _startDataReceiving();
-          }
-        }
-      }
-    } catch (e) {
-      debugPrint('Error restoring state: $e');
-    }
-  }
-
-  /// Save current state to SharedPreferences
-  Future<void> _saveState() async {
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setBool(_trackingKey, _isTracking);
-      await prefs.setString(_deviceIdKey, _connectedDevice?.remoteId.str ?? '');
-    } catch (e) {
-      debugPrint('Error saving state: $e');
-    }
-  }
-
-  /// Check overall Bluetooth system status (support, permissions, adapter state)
-  Future<bool> checkBluetoothStatus() async {
-    try {
-      // Check if Bluetooth is supported
-      if (!await FlutterBluePlus.isSupported) {
-        _emitError("Bluetooth not supported on this device");
-        return false;
-      }
-
-      // Check permissions
-      final hasPermissions = await _checkPermissions();
-      if (!hasPermissions) {
-        return false;
-      }
-
-      // Check if Bluetooth adapter is on
-      final bluetoothState = await FlutterBluePlus.adapterState.first;
-      if (bluetoothState != BluetoothAdapterState.on) {
-        _connectionStateController.add(BleConnectionState.bluetoothOff);
-        return false;
-      }
-
-      // Check if we have a connected device
-      if (_connectedDevice != null) {
-        final connectionState = await _connectedDevice!.connectionState.first;
-        if (connectionState == BluetoothConnectionState.connected) {
-          _connectionStateController.add(_isTracking
-              ? BleConnectionState.tracking
-              : BleConnectionState.connected);
-          return true;
-        }
-      } else {
-        checkForConnectedDevices();
-      }
-
-      _connectionStateController.add(BleConnectionState.disconnected);
-      return true;
-    } catch (e) {
-      _emitError("Error checking Bluetooth status: $e");
       return false;
     }
   }
@@ -186,10 +193,10 @@ class BluetoothService {
 
         if (result != PermissionStatus.granted) {
           if (result.isPermanentlyDenied) {
-            _connectionStateController.add(BleConnectionState.permanentlyPermissionDenied);
+            _emit(BleConnectionState.permanentlyPermissionDenied);
             return false;
           }
-          _connectionStateController.add(BleConnectionState.permissionDenied);
+          _emit(BleConnectionState.permissionDenied);
           return false;
         }
       }
@@ -197,293 +204,268 @@ class BluetoothService {
     return true;
   }
 
-
-  /// Connect to ESP32 device by scanning and connecting
-  /*Future<bool> connectToESP32() async {
+  // ============================================================
+  // STEP 3: Scan and Connect
+  // ============================================================
+  Future<bool> scanAndConnect() async {
     try {
-      _connectionStateController.add(BleConnectionState.connecting);
+      _emit(BleConnectionState.scanning);
 
-      // Start scanning for ESP32 device
+      // Start scan
       await FlutterBluePlus.startScan(
         timeout: const Duration(seconds: 15),
+        withServices: [Guid(serviceUUID)],
         withNames: [esp32DeviceName],
       );
 
-      BluetoothDevice? esp32Device;
+      // Listen for results
+      final completer = Completer<BluetoothDevice?>();
 
-      // Listen to scan results
-      await for (final scanResult in FlutterBluePlus.scanResults) {
-        for (final result in scanResult) {
-          final device = result.device;
-          if (device.platformName.toLowerCase().contains('esp32') ||
-              result.advertisementData.advName.toLowerCase().contains('esp32')) {
-            esp32Device = device;
-            FlutterBluePlus.stopScan(); // optional: stop scanning once found
-            break;
+      _scanSub = FlutterBluePlus.scanResults.listen((results) {
+        for (final r in results) {
+          if (r.advertisementData.serviceUuids.contains(Guid(serviceUUID)) &&
+              (r.device.platformName.contains('ESP32') ||
+                  r.advertisementData.advName.contains('ESP32'))) {
+            completer.complete(r.device);
+            FlutterBluePlus.stopScan();
+            return;
           }
         }
-      }
+      });
 
+      // Wait for device or timeout
+      _device = await completer.future.timeout(
+        const Duration(seconds: 15),
+        onTimeout: () => null,
+      );
+
+      _scanSub?.cancel();
       await FlutterBluePlus.stopScan();
 
-      if (esp32Device == null) {
+      if (_device == null) {
+        _emit(BleConnectionState.notFound);
         _emitError("ESP32 device not found");
-        _connectionStateController.add(BleConnectionState.disconnected);
         return false;
       }
 
-      // Connect to the device
-      await esp32Device.connect(autoConnect: true, license: License.free);
-      _connectedDevice = esp32Device;
-      await _setupDevice(esp32Device);
-
-      _connectionStateController.add(BleConnectionState.connected);
-      await _saveState();
-      return true;
+      // Connect
+      return await _connectToDevice();
     } catch (e) {
-      _emitError("Failed to connect: $e");
-      _connectionStateController.add(BleConnectionState.disconnected);
+      _emitError("Scan failed: $e");
+      _emit(BleConnectionState.disconnected);
       return false;
     }
-  }*/
+  }
 
-  /// Setup device services and characteristics after connection
-  Future<void> _setupDevice(BluetoothDevice device) async {
-    // Listen to connection state changes
-    _connectionSubscription?.cancel();
-    _connectionSubscription = device.connectionState.listen((state) {
+  Future<bool> _connectToDevice() async {
+    if (_device == null) return false;
+
+    try {
+      await _device!.connect(
+        autoConnect: true,
+        timeout: const Duration(seconds: 10),
+        license: License.free
+      );
+
+      await _setupDevice();
+
+      // Store device info
+      _deviceId = _device!.remoteId.str;
+      _deviceName = _device!.platformName;
+      await _saveState();
+
+      _emit(BleConnectionState.connected);
+      return true;
+    } catch (e) {
+      _emitError("Connection failed: $e");
+      _emit(BleConnectionState.disconnected);
+      return false;
+    }
+  }
+
+  // ============================================================
+  // STEP 4: Setup Device (Services & Characteristics)
+  // ============================================================
+  Future<void> _setupDevice() async {
+    if (_device == null) return;
+
+    // Listen to connection state
+    _connSub?.cancel();
+    _connSub = _device!.connectionState.listen((state) {
       if (state == BluetoothConnectionState.disconnected) {
         _handleDisconnection();
       } else if (state == BluetoothConnectionState.connected) {
-        _connectionStateController.add(_isTracking
-            ? BleConnectionState.tracking
-            : BleConnectionState.connected);
+        _emit(_isTracking ? BleConnectionState.tracking : BleConnectionState.connected);
       }
     });
 
-    // Discover services and find required characteristic
-    final services = await device.discoverServices();
+    // Discover services
+    final services = await _device!.discoverServices();
 
     for (final service in services) {
       if (service.uuid.toString().toLowerCase() == serviceUUID.toLowerCase()) {
-        for (final characteristic in service.characteristics) {
-          if (characteristic.uuid.toString().toLowerCase() == characteristicUUID.toLowerCase()) {
-            _dataCharacteristic = characteristic;
+        for (final char in service.characteristics) {
+          if (char.uuid.toString().toLowerCase() == characteristicUUID.toLowerCase()) {
+            _characteristic = char;
             return;
           }
         }
       }
     }
 
-    throw Exception("Required service/characteristic not found");
+    throw Exception("Service/Characteristic not found");
   }
 
-  Future<bool> checkForConnectedDevices() async {
-    try {
-      _connectionStateController.add(BleConnectionState.checking);
-
-      // Get all connected system devices
-      final connectedDevices = await FlutterBluePlus.connectedDevices;
-
-      if (connectedDevices.isEmpty) {
-        _connectionStateController.add(BleConnectionState.disconnected);
-        return false;
-      }
-
-      // Find ESP32 or any BLE device (user can connect manually)
-      BluetoothDevice? targetDevice;
-      for (final device in connectedDevices) {
-        // Check if device has our required service
-        try {
-          final services = await device.discoverServices();
-          for (final service in services) {
-            if (service.uuid.toString().toLowerCase() == serviceUUID.toLowerCase()) {
-              targetDevice = device;
-              break;
-            }
-          }
-          if (targetDevice != null) break;
-        } catch (e) {
-          // Skip this device if we can't discover services
-          continue;
-        }
-      }
-
-      if (targetDevice != null) {
-        _connectedDevice = targetDevice;
-        await _setupDevice(targetDevice);
-        _connectionStateController.add(_isTracking
-            ? BleConnectionState.tracking
-            : BleConnectionState.connected);
-        await _saveState();
-        return true;
-      } else {
-        _connectionStateController.add(BleConnectionState.disconnected);
-        return false;
-      }
-    } catch (e) {
-      _emitError("Error checking connected devices: $e");
-      _connectionStateController.add(BleConnectionState.disconnected);
-      return false;
-    }
-  }
-
-  /// Handle device disconnection and trigger reconnection
-  void _handleDisconnection() {
-    _connectionStateController.add(BleConnectionState.disconnected);
-    _dataSubscription?.cancel();
-    _attemptReconnect();
-  }
-
-  /// Attempt to reconnect to device every 10 seconds
-  void _attemptReconnect() {
-    _reconnectTimer?.cancel();
-    _reconnectTimer = Timer.periodic(const Duration(seconds: 10), (timer) async {
-      try {
-        if (_connectedDevice != null) {
-          await _connectedDevice!.connect(license: License.free);
-          await _setupDevice(_connectedDevice!);
-
-          if (_isTracking) {
-            await _startDataReceiving();
-          }
-
-          timer.cancel();
-        }
-      } catch (e) {
-        debugPrint('Reconnection failed: $e');
-      }
-    });
-  }
-
-  /// Start data tracking - enable notifications and begin receiving data
+  // ============================================================
+  // STEP 5: Start/Stop Tracking
+  // ============================================================
   Future<bool> startTracking() async {
-    if (_connectedDevice == null || _dataCharacteristic == null) {
-      _emitError("Device not connected properly");
+    if (_device == null || _characteristic == null) {
+      _emitError("Device not ready");
       return false;
     }
 
-    try {
-      _isTracking = true;
-      await _startDataReceiving();
-      await _saveState();
-
-      _connectionStateController.add(BleConnectionState.tracking);
-      return true;
-    } catch (e) {
-      _emitError("Failed to start tracking: $e");
-      return false;
-    }
+    _isTracking = true;
+    await _startNotifications();
+    await _saveState();
+    _emit(BleConnectionState.tracking);
+    return true;
   }
 
-  /// Stop data tracking - disable notifications
   Future<bool> stopTracking() async {
-    try {
-      _isTracking = false;
-      await _stopDataReceiving();
-      await _saveState();
-
-      _connectionStateController.add(BleConnectionState.connected);
-      return true;
-    } catch (e) {
-      _emitError("Failed to stop tracking: $e");
-      return false;
-    }
+    _isTracking = false;
+    await _stopNotifications();
+    await _saveState();
+    _emit(BleConnectionState.connected);
+    return true;
   }
 
-  /// Enable characteristic notifications and listen to data
-  Future<void> _startDataReceiving() async {
-    if (_dataCharacteristic == null) return;
+  Future<void> _startNotifications() async {
+    if (_characteristic == null) return;
 
     try {
-      await _dataCharacteristic!.setNotifyValue(true);
+      await _characteristic!.setNotifyValue(true);
 
-      _dataSubscription = _dataCharacteristic!.onValueReceived.listen((data) {
-        final receivedString = utf8.decode(data);
-        _addReceivedData(receivedString);
-        _sendDataToUI(receivedString);
+      _dataSub = _characteristic!.onValueReceived.listen((data) {
+        final str = utf8.decode(data);
+        _addData(str);
       });
     } catch (e) {
-      _emitError("Failed to start data receiving: $e");
+      _emitError("Failed to start notifications: $e");
     }
   }
 
-  /// Disable characteristic notifications and stop listening
-  Future<void> _stopDataReceiving() async {
-    if (_dataCharacteristic == null) return;
+  Future<void> _stopNotifications() async {
+    if (_characteristic == null) return;
 
     try {
-      await _dataCharacteristic!.setNotifyValue(false);
-      _dataSubscription?.cancel();
+      await _characteristic!.setNotifyValue(false);
+      _dataSub?.cancel();
     } catch (e) {
-      debugPrint('Error stopping data receiving: $e');
+      debugPrint('Stop notifications error: $e');
     }
   }
 
-  /// Add received data to internal list and emit to stream
-  void _addReceivedData(String data) {
+  void _addData(String data) {
     final bleData = BleData(
       timestamp: DateTime.now(),
       data: data,
     );
 
-    _receivedData.insert(0, bleData);
-
-    // Keep only last 1000 entries
-    if (_receivedData.length > 1000) {
-      _receivedData = _receivedData.take(1000).toList();
+    _data.insert(0, bleData);
+    if (_data.length > 1000) {
+      _data = _data.take(1000).toList();
     }
 
-    _dataStreamController.add(List.from(_receivedData));
+    _dataController.add(List.from(_data));
   }
 
-  /// Send data to UI via isolate communication
-  void _sendDataToUI(String data) {
-    final sendPort = IsolateNameServer.lookupPortByName('ble_data_port');
-    sendPort?.send({
-      'type': 'data',
-      'timestamp': DateTime.now().toIso8601String(),
-      'data': data,
-    });
-  }
-
-  /// Emit error messages
-  void _emitError(String error) {
-    debugPrint('BLE Service Error: $error');
-    _errorStreamController.add(error);
-  }
-
-  /// Disconnect from device and cleanup
+  // ============================================================
+  // STEP 6: Disconnect and Cleanup
+  // ============================================================
   Future<void> disconnect() async {
     try {
       _isTracking = false;
-      await _stopDataReceiving();
+      await _stopNotifications();
 
-      _connectionSubscription?.cancel();
-      _reconnectTimer?.cancel();
+      _connSub?.cancel();
+      _scanSub?.cancel();
 
-      if (_connectedDevice != null) {
-        await _connectedDevice!.disconnect();
-        _connectedDevice = null;
+      if (_device != null) {
+        await _device!.disconnect();
+        _device = null;
       }
 
-      _connectionStateController.add(BleConnectionState.disconnected);
+      _deviceId = null;
+      _deviceName = null;
+
       await _saveState();
+      _emit(BleConnectionState.disconnected);
     } catch (e) {
-      _emitError("Error during disconnect: $e");
+      _emitError("Disconnect error: $e");
     }
   }
 
-  // Getters
-  List<BleData> getCurrentData() => List.from(_receivedData);
-  bool get isTracking => _isTracking;
-  BluetoothDevice? get connectedDevice => _connectedDevice;
+  void _handleDisconnection() {
+    _emit(BleConnectionState.disconnected);
+    _dataSub?.cancel();
+    // Auto-reconnect logic can be added here if needed
+  }
 
-  /// Cleanup all resources
+  // ============================================================
+  // Helper Methods
+  // ============================================================
+  Future<void> _saveState() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('is_tracking', _isTracking);
+    await prefs.setString('device_id', _deviceId ?? '');
+    await prefs.setString('device_name', _deviceName ?? '');
+  }
+
+  void _emit(BleConnectionState state) => _stateController.add(state);
+
+  void _emitError(String error) {
+    debugPrint('BLE Error: $error');
+    _errorController.add(error);
+  }
+
   void dispose() {
-    _connectionStateController.close();
-    _dataStreamController.close();
-    _errorStreamController.close();
+    _stateController.close();
+    _dataController.close();
+    _errorController.close();
     disconnect();
   }
 }
+
+// Usage Example:
+/*
+final bleService = BluetoothService.instance;
+
+// Initialize
+await bleService.initialize();
+
+// Check Bluetooth status
+final ready = await bleService.checkBluetoothStatus();
+
+// Scan and connect
+if (ready) {
+  final connected = await bleService.scanAndConnect();
+
+  if (connected) {
+    print('Device: ${bleService.deviceName} (${bleService.deviceId})');
+
+    // Start tracking
+    await bleService.startTracking();
+  }
+}
+
+// Listen to state
+bleService.stateStream.listen((state) {
+  print('BLE State: $state');
+});
+
+// Listen to data
+bleService.dataStream.listen((data) {
+  print('Received ${data.length} items');
+});
+*/

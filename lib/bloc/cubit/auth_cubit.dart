@@ -31,7 +31,7 @@ class AuthCubit extends Cubit<AuthState> {
       // Mock API call
       await Future.delayed(Duration(seconds: 1));
 
-      if (email.isNotEmpty && password.length >= 6) {
+      if (email.isNotEmpty && password.isNotEmpty) {
         await PrefsService.setLoggedIn(true, token: 'mock_token_123');
         emit(AuthState.authenticated);
       } else {
@@ -48,7 +48,7 @@ class AuthCubit extends Cubit<AuthState> {
     try {
       await Future.delayed(Duration(seconds: 1));
 
-      if (email.isNotEmpty && password.length >= 6) {
+      if (email.isNotEmpty && password.isNotEmpty) {
         await PrefsService.setLoggedIn(true, token: 'mock_token_123');
         emit(AuthState.authenticated);
       } else {

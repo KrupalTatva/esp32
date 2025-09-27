@@ -30,7 +30,6 @@ class _DeviceInfoCardState extends State<DeviceInfoCard> {
   void initState() {
     // TODO: implement initState
     super.initState();
-    bleCubit.initialize();
   }
 
 

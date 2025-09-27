@@ -143,7 +143,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
                               ],
                             ),
                           ),
-
                         ],
                       ),
                     ),
@@ -188,6 +187,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
                         Navigator.pushNamed(context, AppRouter.trackingScreen);
                       }),
                       _buildActionCard('Set Reminder', Icons.alarm, () {
+                        Navigator.pushNamed(context, AppRouter.setReminderScreen);
+                      }),
+                      _buildActionCard('Analytics', Icons.analytics_outlined, () {
                         Navigator.pushNamed(context, AppRouter.setReminderScreen);
                       }),
                       // _buildActionCard('Device info', Icons.microwave_sharp, () {}),
