@@ -64,7 +64,7 @@ class _DeviceInfoCardState extends State<DeviceInfoCard> {
                   const SizedBox(width: 12),
                   Expanded(
                     child: Text(
-                      state.errorMessage ??
+                      /*state.errorMessage ??*/
                           "Can't find your bottle. Please check Bluetooth connection with bottle and try again.",
                       style: TextStyle(color: Colors.red[800], fontSize: 14),
                     ),

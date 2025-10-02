@@ -1,8 +1,11 @@
+import 'package:esp/screen/WaterIntake.dart';
 import 'package:esp/screen/create_account_screen.dart';
 import 'package:flutter/material.dart';
 
+import '../screen/AnalyticsScreen.dart';
 import '../screen/ble_connection_screen.dart';
 import '../screen/dashboard_screen.dart';
+import '../screen/hydration_goal_screen.dart';
 import '../screen/login_screen.dart';
 import '../screen/reminder_screeen.dart';
 
@@ -13,6 +16,8 @@ class AppRouter {
   static const String createAccount = '/createAccount';
   static const String setReminderScreen = '/setReminderScreen';
   static const String trackingScreen = '/trackingScreen';
+  static const String hydrationGoalScreen = '/hydrationGoalScreen';
+  static const String analyticsScreen = '/analyticsScreen';
 
   static Route<dynamic> onGenerateRoute(RouteSettings settings) {
     switch (settings.name) {
@@ -26,6 +31,10 @@ class AppRouter {
         return MaterialPageRoute(builder: (_) => WaterReminderScreen());
       case trackingScreen:
         return MaterialPageRoute(builder: (_) => BleConnectionScreen());
+      case hydrationGoalScreen:
+        return MaterialPageRoute(builder: (_) => HydrationGoalScreen());
+      case analyticsScreen:
+        return MaterialPageRoute(builder: (_) => AnalyticsScreen());
       default:
         return MaterialPageRoute(
           builder: (_) => Scaffold(

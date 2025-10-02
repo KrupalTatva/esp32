@@ -190,7 +190,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
                         Navigator.pushNamed(context, AppRouter.setReminderScreen);
                       }),
                       _buildActionCard('Analytics', Icons.analytics_outlined, () {
-                        Navigator.pushNamed(context, AppRouter.setReminderScreen);
+                        Navigator.pushNamed(context, AppRouter.analyticsScreen);
+                      }),
+                      _buildActionCard('Set Goals', Icons.golf_course, () {
+                        Navigator.pushNamed(context, AppRouter.hydrationGoalScreen);
                       }),
                       // _buildActionCard('Device info', Icons.microwave_sharp, () {}),
                     ],
