@@ -60,7 +60,7 @@ class BleCubit extends Cubit<BleState> {
     emit(state.copyWith(isLoading: true, clearError: true));
 
     try {
-      await _service.initialize();
+      // await _service.initialize();
 
       // Update UI with current device info
       emit(state.copyWith(

@@ -3,8 +3,10 @@ import 'package:esp/router/AppRouter.dart';
 import 'package:esp/screen/auth_wrapper.dart';
 import 'package:esp/service/bluetooth_background_worker.dart';
 import 'package:esp/service/bluetooth_service.dart';
+import 'package:esp/service/database_service.dart';
 import 'package:esp/service/water_reminder_worker.dart';
 import 'package:esp/service/preference_service.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:workmanager/workmanager.dart';
@@ -29,7 +31,8 @@ void callbackDispatcher() {
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  await BluetoothService.instance.initialize();
+  await DatabaseService().initialize();
+  await BluetoothService.instance.initialize(isMock: kDebugMode);
   await BackgroundWorker.initialize();
   await Workmanager().initialize(
     callbackDispatcher,

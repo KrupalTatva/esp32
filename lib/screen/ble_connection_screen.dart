@@ -244,7 +244,7 @@ class _BleConnectionScreenState extends State<BleConnectionScreen>
               style: ElevatedButton.styleFrom(
                 backgroundColor: AppColors.primary,
                 foregroundColor: Colors.white,
-                padding: const EdgeInsets.symmetric(vertical: 12),
+                padding: const EdgeInsets.all(12),
               ),
             ),
             const SizedBox(height: 8),
@@ -267,7 +267,7 @@ class _BleConnectionScreenState extends State<BleConnectionScreen>
           style: ElevatedButton.styleFrom(
             backgroundColor: Colors.orange,
             foregroundColor: Colors.white,
-            padding: const EdgeInsets.symmetric(vertical: 12),
+            padding: const EdgeInsets.all(12),
           ),
         );
 
@@ -281,7 +281,7 @@ class _BleConnectionScreenState extends State<BleConnectionScreen>
           style: ElevatedButton.styleFrom(
             backgroundColor: Colors.red,
             foregroundColor: Colors.white,
-            padding: const EdgeInsets.symmetric(vertical: 12),
+            padding: const EdgeInsets.all(12),
           ),
         );
 
@@ -340,13 +340,16 @@ class _BleConnectionScreenState extends State<BleConnectionScreen>
         return Column(
           children: [
             ElevatedButton.icon(
-              onPressed: () => bleCubit.startTracking(),
+              onPressed: () {
+                print("on click operation");
+                bleCubit.startTracking();
+              },
               icon: const Icon(Icons.play_arrow),
               label: const Text("Start Tracking"),
               style: ElevatedButton.styleFrom(
                 backgroundColor: Colors.green,
                 foregroundColor: Colors.white,
-                padding: const EdgeInsets.symmetric(vertical: 12),
+                padding: const EdgeInsets.all(12),
               ),
             ),
             const SizedBox(height: 10),
@@ -368,7 +371,7 @@ class _BleConnectionScreenState extends State<BleConnectionScreen>
               style: ElevatedButton.styleFrom(
                 backgroundColor: Colors.red,
                 foregroundColor: Colors.white,
-                padding: const EdgeInsets.symmetric(vertical: 12),
+                padding: const EdgeInsets.all(12),
               ),
             ),
             const SizedBox(height: 10),

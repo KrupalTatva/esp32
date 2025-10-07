@@ -1,5 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
+import 'package:esp/model/sensor_data.dart';
+import 'package:esp/service/database_service.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import 'package:permission_handler/permission_handler.dart';
@@ -18,10 +20,30 @@ enum BleConnectionState {
   disconnected,
 }
 
+extension DateOnly on DateTime {
+  DateTime get dateOnly => DateTime(year, month, day);
+}
+
+extension BluetoothDeviceX on BluetoothDevice {
+  /// Returns a safe name:
+  /// - mock name if it's your mock device
+  /// - otherwise the platformName
+  String get safeName {
+    if (remoteId.str == "AA:BB:CC:DD:EE:FF") {
+      return "ESP32_MOCK";
+    }
+    return platformName.isNotEmpty ? platformName : "Unknown Device";
+  }
+}
+
 class BluetoothService {
   static BluetoothService? _instance;
+
   static BluetoothService get instance => _instance ??= BluetoothService._();
+
   BluetoothService._();
+
+  bool isMock = false;
 
   // Streams
   final _stateController = StreamController<BleConnectionState>.broadcast();
@@ -29,7 +51,9 @@ class BluetoothService {
   final _errorController = StreamController<String?>.broadcast();
 
   Stream<BleConnectionState> get stateStream => _stateController.stream;
+
   Stream<List<BleData>> get dataStream => _dataController.stream;
+
   Stream<String?> get errorStream => _errorController.stream;
 
   // Device info
@@ -54,15 +78,19 @@ class BluetoothService {
 
   // Getters
   String? get deviceId => _deviceId;
+
   String? get deviceName => _deviceName;
+
   bool get isTracking => _isTracking;
+
   List<BleData> get currentData => List.from(_data);
 
   // ============================================================
   // STEP 1: Initialize and restore state
   // ============================================================
-  Future<void> initialize() async {
+  Future<void> initialize({bool isMock = false}) async {
     _emit(BleConnectionState.checking);
+    this.isMock = isMock;
 
     final restored = await _restoreState();
 
@@ -74,38 +102,78 @@ class BluetoothService {
   }
 
   Future<bool> _restoreState() async {
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      _isTracking = prefs.getBool('is_tracking') ?? false;
-      _deviceId = prefs.getString('device_id');
-      _deviceName = prefs.getString('device_name');
+    if(isMock){
+      return await _mockRestoreState();
+    } else {
+      try {
+        final prefs = await SharedPreferences.getInstance();
+        _isTracking = prefs.getBool('is_tracking') ?? false;
+        _deviceId = prefs.getString('device_id');
+        _deviceName = prefs.getString('device_name');
 
-      // Check if we have previous device data
-      if (_deviceId != null && _deviceId!.isNotEmpty) {
-        final devices = await FlutterBluePlus.connectedSystemDevices;
-        _device = devices.where((d) => d.remoteId.str == _deviceId).firstOrNull;
+        // Check if we have previous device data
+        if (_deviceId != null && _deviceId!.isNotEmpty) {
+          final devices = await FlutterBluePlus.connectedSystemDevices;
+          _device = devices
+              .where((d) => d.remoteId.str == _deviceId)
+              .firstOrNull;
 
-        if (_device != null) {
-          // Previous device is still connected
-          await _setupDevice();
-          if (_isTracking) await _startNotifications();
-          _emit(_isTracking ? BleConnectionState.tracking : BleConnectionState.connected);
-          return true; // Successfully restored
+          if (_device != null) {
+            // Previous device is still connected
+            await _setupDevice();
+            if (_isTracking) await _startNotifications();
+            _emit(
+              _isTracking
+                  ? BleConnectionState.tracking
+                  : BleConnectionState.connected,
+            );
+            return true; // Successfully restored
+          } else {
+            // Device ID exists but device not connected anymore
+            _emitError('Previous device not found. Please scan again.');
+          }
         } else {
-          // Device ID exists but device not connected anymore
-          _emitError('Previous device not found. Please scan again.');
+          // First time - no previous device data
+          debugPrint('No previous device found. First time setup required.');
         }
-      } else {
-        // First time - no previous device data
-        debugPrint('No previous device found. First time setup required.');
+      } catch (e) {
+        _emitError('Restore failed: $e');
       }
-    } catch (e) {
-      _emitError('Restore failed: $e');
-    }
 
-    // Either first time or restoration failed
-    return false;
+      // Either first time or restoration failed
+      return false;
+    }
   }
+
+  Future<bool> _mockRestoreState() async {
+    try {
+      // Simulate a small delay
+      await Future.delayed(const Duration(milliseconds: 500));
+
+      // Mock tracking state
+      final prefs = await SharedPreferences.getInstance();
+      _isTracking = prefs.getBool('is_tracking') ?? false;;
+
+      // Mock device ID and name
+      _deviceId = "AA:BB:CC:DD:EE:FF";
+      _deviceName = "ESP32_MOCK";
+
+      // Create mock device
+      _device = BluetoothDevice.fromId(_deviceId!);
+
+      // Setup device and notifications (mocked)
+      await _setupDevice();
+      if (_isTracking) await _startNotifications();
+
+      _emit(_isTracking ? BleConnectionState.tracking : BleConnectionState.connected);
+
+      return true; // Successfully "restored" mock state
+    } catch (e) {
+      _emitError('Mock restore failed: $e');
+      return false;
+    }
+  }
+
 
   // ============================================================
   // STEP 2: Check Bluetooth Status (Support + Permissions)
@@ -135,7 +203,11 @@ class BluetoothService {
     if (_device != null) {
       final connState = await _device!.connectionState.first;
       if (connState == BluetoothConnectionState.connected) {
-        _emit(_isTracking ? BleConnectionState.tracking : BleConnectionState.connected);
+        _emit(
+          _isTracking
+              ? BleConnectionState.tracking
+              : BleConnectionState.connected,
+        );
         return true;
       }
     }
@@ -213,7 +285,7 @@ class BluetoothService {
 
       // Start scan
       await FlutterBluePlus.startScan(
-        timeout: const Duration(seconds: 15),
+        timeout: const Duration(seconds: 3),
         withServices: [Guid(serviceUUID)],
         withNames: [esp32DeviceName],
       );
@@ -221,17 +293,26 @@ class BluetoothService {
       // Listen for results
       final completer = Completer<BluetoothDevice?>();
 
-      _scanSub = FlutterBluePlus.scanResults.listen((results) {
-        for (final r in results) {
-          if (r.advertisementData.serviceUuids.contains(Guid(serviceUUID)) &&
-              (r.device.platformName.contains('ESP32') ||
-                  r.advertisementData.advName.contains('ESP32'))) {
-            completer.complete(r.device);
-            FlutterBluePlus.stopScan();
-            return;
+      if (!isMock) {
+        _scanSub = FlutterBluePlus.scanResults.listen((results) {
+          for (final r in results) {
+            if (r.advertisementData.serviceUuids.contains(Guid(serviceUUID)) &&
+                (r.device.platformName.contains('ESP32') ||
+                    r.advertisementData.advName.contains('ESP32'))) {
+              completer.complete(r.device);
+              FlutterBluePlus.stopScan();
+              return;
+            }
           }
-        }
-      });
+        });
+      } else {
+        Future.delayed(const Duration(seconds: 3), () {
+          final mockDevice = BluetoothDevice.fromId(
+              "AA:BB:CC:DD:EE:FF",
+          );
+          completer.complete(mockDevice);
+        });
+      }
 
       // Wait for device or timeout
       _device = await completer.future.timeout(
@@ -261,17 +342,19 @@ class BluetoothService {
     if (_device == null) return false;
 
     try {
-      await _device!.connect(
-        autoConnect: true,
-        timeout: const Duration(seconds: 10),
-        license: License.free
-      );
+      if (!isMock) {
+        await _device!.connect(
+          autoConnect: true,
+          timeout: const Duration(seconds: 10),
+          license: License.free,
+        );
+      }
 
       await _setupDevice();
 
       // Store device info
       _deviceId = _device!.remoteId.str;
-      _deviceName = _device!.platformName;
+      _deviceName = _device!.safeName;
       await _saveState();
 
       _emit(BleConnectionState.connected);
@@ -287,33 +370,77 @@ class BluetoothService {
   // STEP 4: Setup Device (Services & Characteristics)
   // ============================================================
   Future<void> _setupDevice() async {
-    if (_device == null) return;
+    if(isMock){
+      await _mockSetupDevice();
+    }else {
+      if (_device == null) return;
 
-    // Listen to connection state
-    _connSub?.cancel();
-    _connSub = _device!.connectionState.listen((state) {
-      if (state == BluetoothConnectionState.disconnected) {
-        _handleDisconnection();
-      } else if (state == BluetoothConnectionState.connected) {
-        _emit(_isTracking ? BleConnectionState.tracking : BleConnectionState.connected);
-      }
-    });
+      // Listen to connection state
+      _connSub?.cancel();
+      _connSub = _device!.connectionState.listen((state) {
+        if (state == BluetoothConnectionState.disconnected) {
+          _handleDisconnection();
+        } else if (state == BluetoothConnectionState.connected) {
+          _emit(
+            _isTracking
+                ? BleConnectionState.tracking
+                : BleConnectionState.connected,
+          );
+        }
+      });
 
-    // Discover services
-    final services = await _device!.discoverServices();
+      // Discover services
+      final services = await _device!.discoverServices();
 
-    for (final service in services) {
-      if (service.uuid.toString().toLowerCase() == serviceUUID.toLowerCase()) {
-        for (final char in service.characteristics) {
-          if (char.uuid.toString().toLowerCase() == characteristicUUID.toLowerCase()) {
-            _characteristic = char;
-            return;
+      for (final service in services) {
+        if (service.uuid.toString().toLowerCase() ==
+            serviceUUID.toLowerCase()) {
+          for (final char in service.characteristics) {
+            if (char.uuid.toString().toLowerCase() ==
+                characteristicUUID.toLowerCase()) {
+              _characteristic = char;
+              return;
+            }
           }
         }
       }
-    }
 
-    throw Exception("Service/Characteristic not found");
+      throw Exception("Service/Characteristic not found");
+    }
+  }
+
+  Future<void> _mockSetupDevice() async {
+    await Future.delayed(
+      const Duration(milliseconds: 500),
+    ); // simulate discovery delay
+
+    // Fake connection state listener
+    _connSub?.cancel();
+    _connSub =
+        Stream<BluetoothConnectionState>.periodic(
+          const Duration(seconds: 2),
+          (count) => count <= 2
+              ? BluetoothConnectionState.disconnected
+              : BluetoothConnectionState.connected,
+        ).listen((state) {
+          if (state == BluetoothConnectionState.disconnected) {
+            _handleDisconnection();
+          } else {
+            _emit(
+              _isTracking
+                  ? BleConnectionState.tracking
+                  : BleConnectionState.connected,
+            );
+          }
+        });
+    // Create a mock characteristic
+    _characteristic = BluetoothCharacteristic(
+      remoteId: _device!.remoteId,
+      serviceUuid: Guid(serviceUUID),
+      characteristicUuid: Guid(characteristicUUID),
+      primaryServiceUuid: Guid(serviceUUID),
+      instanceId: 0,
+    );
   }
 
   // ============================================================
@@ -341,38 +468,89 @@ class BluetoothService {
   }
 
   Future<void> _startNotifications() async {
-    if (_characteristic == null) return;
+    if(isMock){
+      await _mockStartNotifications();
+    } else {
+      if (_characteristic == null) return;
 
-    try {
-      await _characteristic!.setNotifyValue(true);
+      try {
+        await _characteristic!.setNotifyValue(true);
 
-      _dataSub = _characteristic!.onValueReceived.listen((data) {
-        final str = utf8.decode(data);
-        _addData(str);
-      });
-    } catch (e) {
-      _emitError("Failed to start notifications: $e");
+        _dataSub = _characteristic!.onValueReceived.listen((data) async {
+          final str = utf8.decode(data);
+          await _addData(str);
+        });
+      } catch (e) {
+        _emitError("Failed to start notifications: $e");
+      }
     }
   }
 
-  Future<void> _stopNotifications() async {
-    if (_characteristic == null) return;
+  /// Mock version for testing
+  Future<void> _mockStartNotifications() async {
+    // Simulate enabling notifications delay
+    await Future.delayed(const Duration(milliseconds: 200));
 
+    // Periodically emit fake data
+    _dataSub?.cancel();
+    _dataSub = Stream<List<int>>.periodic(
+      const Duration(seconds: 2),
+          (count) {
+        // Example: sending fake sensor/battery values
+        final message = "MockData_${count + 1}";
+        return utf8.encode(message);
+      },
+    ).listen((data) async {
+      final str = utf8.decode(data);
+      await _addData(str);
+    });
+  }
+
+  Future<void> _stopNotifications() async {
+    if (isMock) {
+      await _mockStopNotifications();
+    } else {
+      if (_characteristic == null) return;
+
+      try {
+        await _characteristic!.setNotifyValue(false);
+        _dataSub?.cancel();
+      } catch (e) {
+        debugPrint('Stop notifications error: $e');
+      }
+    }
+  }
+
+  Future<void> _mockStopNotifications() async {
     try {
-      await _characteristic!.setNotifyValue(false);
       _dataSub?.cancel();
     } catch (e) {
       debugPrint('Stop notifications error: $e');
     }
   }
 
-  void _addData(String data) {
-    final bleData = BleData(
-      timestamp: DateTime.now(),
-      data: data,
-    );
+  Future<void> _addData(String data) async {
+    if(isMock){
+      await _mockAddData(data);
+    }else {
+      final bleData = BleData(timestamp: DateTime.now(), data: data);
+
+      _data.insert(0, bleData);
+      await DatabaseService().insertOrUpdateSensorData(SensorData(hydrationLevel: 2, timestamp: bleData.timestamp.dateOnly));
+      if (_data.length > 1000) {
+        _data = _data.take(1000).toList();
+      }
+
+      _dataController.add(List.from(_data));
+    }
+  }
+
+  /// Mock addData (simulates BLE data)
+  Future<void> _mockAddData(String mockData) async {
+    final bleData = BleData(timestamp: DateTime.now(), data: mockData);
 
     _data.insert(0, bleData);
+    await DatabaseService().insertOrUpdateSensorData(SensorData(hydrationLevel: 2, timestamp: bleData.timestamp.dateOnly));
     if (_data.length > 1000) {
       _data = _data.take(1000).toList();
     }
@@ -392,7 +570,9 @@ class BluetoothService {
       _scanSub?.cancel();
 
       if (_device != null) {
-        await _device!.disconnect();
+    if(!isMock){
+          await _device!.disconnect();
+        }
         _device = null;
       }
 

@@ -6,19 +6,13 @@ part 'sensor_data.g.dart';
 @JsonSerializable()
 class SensorData extends Equatable {
   final int? id;
-  final double temperature;
-  final double humidity;
-  final double pressure;
+  final double hydrationLevel;
   final DateTime timestamp;
-  final String deviceId;
 
   const SensorData({
     this.id,
-    required this.temperature,
-    required this.humidity,
-    required this.pressure,
-    required this.timestamp,
-    required this.deviceId,
+    required this.hydrationLevel,
+    required this.timestamp
   });
 
   factory SensorData.fromJson(Map<String, dynamic> json) => _$SensorDataFromJson(json);
@@ -27,43 +21,31 @@ class SensorData extends Equatable {
   Map<String, dynamic> toMap() {
     return {
       'id': id,
-      'temperature': temperature,
-      'humidity': humidity,
-      'pressure': pressure,
+      'hydrationLevel': hydrationLevel,
       'timestamp': timestamp.toIso8601String(),
-      'deviceId': deviceId,
     };
   }
 
   factory SensorData.fromMap(Map<String, dynamic> map) {
     return SensorData(
       id: map['id']?.toInt(),
-      temperature: (map['temperature'] ?? 0.0).toDouble(),
-      humidity: (map['humidity'] ?? 0.0).toDouble(),
-      pressure: (map['pressure'] ?? 0.0).toDouble(),
+      hydrationLevel: (map['hydrationLevel'] ?? 0.0).toDouble(),
       timestamp: DateTime.parse(map['timestamp']),
-      deviceId: map['deviceId'] ?? '',
     );
   }
 
   SensorData copyWith({
     int? id,
-    double? temperature,
-    double? humidity,
-    double? pressure,
+    double? hydrationLevel,
     DateTime? timestamp,
-    String? deviceId,
   }) {
     return SensorData(
       id: id ?? this.id,
-      temperature: temperature ?? this.temperature,
-      humidity: humidity ?? this.humidity,
-      pressure: pressure ?? this.pressure,
+      hydrationLevel: hydrationLevel ?? this.hydrationLevel,
       timestamp: timestamp ?? this.timestamp,
-      deviceId: deviceId ?? this.deviceId,
     );
   }
 
   @override
-  List<Object?> get props => [id, temperature, humidity, pressure, timestamp, deviceId];
+  List<Object?> get props => [id, hydrationLevel, timestamp];
 }

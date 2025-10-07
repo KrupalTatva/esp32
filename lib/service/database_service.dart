@@ -10,8 +10,14 @@ class DatabaseService {
 
   static Database? _database;
 
-  Future<Database> get database async {
+  Future<void> initialize() async {
     _database ??= await _initDatabase();
+  }
+
+  Database get database {
+    if (_database == null) {
+      throw Exception("Database not initialized. Call initialize() first.");
+    }
     return _database!;
   }
 
@@ -21,7 +27,7 @@ class DatabaseService {
 
     return await openDatabase(
       path,
-      version: 2,
+      version: 1,
       onCreate: _createDb,
       onUpgrade: _upgradeDb,
     );
@@ -31,20 +37,13 @@ class DatabaseService {
     await db.execute('''
       CREATE TABLE sensor_data(
         id INTEGER PRIMARY KEY AUTOINCREMENT,
-        temperature REAL NOT NULL,
-        humidity REAL NOT NULL,
-        pressure REAL NOT NULL,
-        timestamp TEXT NOT NULL,
-        deviceId TEXT NOT NULL
+        hydrationLevel REAL NOT NULL,
+        timestamp TEXT NOT NULL
       )
     ''');
 
     await db.execute('''
       CREATE INDEX idx_timestamp ON sensor_data(timestamp)
-    ''');
-
-    await db.execute('''
-      CREATE INDEX idx_deviceId ON sensor_data(deviceId)
     ''');
   }
 
@@ -53,24 +52,59 @@ class DatabaseService {
       await db.execute('''
         CREATE INDEX IF NOT EXISTS idx_timestamp ON sensor_data(timestamp)
       ''');
-      await db.execute('''
-        CREATE INDEX IF NOT EXISTS idx_deviceId ON sensor_data(deviceId)
-      ''');
     }
   }
 
   Future<int> insertSensorData(SensorData data) async {
-    final db = await database;
     try {
-      return await db.insert('sensor_data', data.toMap());
+      return await database.insert('sensor_data', data.toMap());
     } catch (e) {
       throw DatabaseException('Failed to insert sensor data: $e');
     }
   }
 
+  Future<int> insertOrUpdateSensorData(SensorData data) async {
+    try {
+      // Check if a record exists for this exact timestamp
+      final existing = await (await database).query(
+        'sensor_data',
+        where: "timestamp = ?",
+        whereArgs: [data.timestamp.toIso8601String()],
+      );
+
+      if (existing.isNotEmpty) {
+        // Row exists → update it
+        final id = existing.first['id'] as int;
+
+        // Map without id
+        final updateMap = {
+          'hydrationLevel': data.hydrationLevel,
+          'timestamp': data.timestamp.toIso8601String(),
+        };
+
+        return await (await database).update(
+          'sensor_data',
+          updateMap,
+          where: "id = ?",
+          whereArgs: [id],
+        );
+      } else {
+        // No row → insert new one
+        final insertMap = {
+          'hydrationLevel': data.hydrationLevel,
+          'timestamp': data.timestamp.toIso8601String(),
+        };
+
+        return await (await database).insert('sensor_data', insertMap);
+      }
+    } catch (e) {
+      throw DatabaseException('Failed to insert or update sensor data: $e');
+    }
+  }
+
+
   Future<List<int>> insertMultipleSensorData(List<SensorData> dataList) async {
-    final db = await database;
-    final batch = db.batch();
+    final batch = database.batch();
 
     for (final data in dataList) {
       batch.insert('sensor_data', data.toMap());
@@ -89,10 +123,8 @@ class DatabaseService {
     int? offset,
     String? orderBy,
   }) async {
-    final db = await database;
-
     try {
-      final List<Map<String, dynamic>> maps = await db.query(
+      final List<Map<String, dynamic>> maps = await database.query(
         'sensor_data',
         orderBy: orderBy ?? 'timestamp DESC',
         limit: limit,
@@ -111,7 +143,7 @@ class DatabaseService {
     String? deviceId,
     int? limit,
   }) async {
-    final db = await database;
+
 
     try {
       String whereClause = 'timestamp BETWEEN ? AND ?';
@@ -122,7 +154,7 @@ class DatabaseService {
         whereArgs.add(deviceId);
       }
 
-      final List<Map<String, dynamic>> maps = await db.query(
+      final List<Map<String, dynamic>> maps = await database.query(
         'sensor_data',
         where: whereClause,
         whereArgs: whereArgs,
@@ -137,10 +169,10 @@ class DatabaseService {
   }
 
   Future<List<SensorData>> getRecentSensorData(int limit) async {
-    final db = await database;
+
 
     try {
-      final List<Map<String, dynamic>> maps = await db.query(
+      final List<Map<String, dynamic>> maps = await database.query(
         'sensor_data',
         orderBy: 'timestamp DESC',
         limit: limit,
@@ -153,7 +185,7 @@ class DatabaseService {
   }
 
   Future<SensorData?> getLatestSensorData({String? deviceId}) async {
-    final db = await database;
+
 
     try {
       String whereClause = '';
@@ -164,7 +196,7 @@ class DatabaseService {
         whereArgs.add(deviceId);
       }
 
-      final List<Map<String, dynamic>> maps = await db.query(
+      final List<Map<String, dynamic>> maps = await database.query(
         'sensor_data',
         where: whereClause.isEmpty ? null : whereClause,
         whereArgs: whereArgs.isEmpty ? null : whereArgs,
@@ -179,10 +211,10 @@ class DatabaseService {
   }
 
   Future<int> deleteOldData(DateTime beforeDate) async {
-    final db = await database;
+
 
     try {
-      return await db.delete(
+      return await database.delete(
         'sensor_data',
         where: 'timestamp < ?',
         whereArgs: [beforeDate.toIso8601String()],
@@ -193,10 +225,10 @@ class DatabaseService {
   }
 
   Future<int> deleteSensorData(int id) async {
-    final db = await database;
+
 
     try {
-      return await db.delete(
+      return await database.delete(
         'sensor_data',
         where: 'id = ?',
         whereArgs: [id],
@@ -207,7 +239,7 @@ class DatabaseService {
   }
 
   Future<int> getDataCount({String? deviceId, DateTime? after}) async {
-    final db = await database;
+
 
     try {
       String whereClause = '';
@@ -224,7 +256,7 @@ class DatabaseService {
         whereArgs.add(after.toIso8601String());
       }
 
-      final result = await db.query(
+      final result = await database.query(
         'sensor_data',
         columns: ['COUNT(*) as count'],
         where: whereClause.isEmpty ? null : whereClause,
@@ -238,19 +270,19 @@ class DatabaseService {
   }
 
   Future<void> clearAllData() async {
-    final db = await database;
+
 
     try {
-      await db.delete('sensor_data');
+      await database.delete('sensor_data');
     } catch (e) {
       throw DatabaseException('Failed to clear all data: $e');
     }
   }
 
   Future<void> closeDatabase() async {
-    final db = _database;
-    if (db != null) {
-      await db.close();
+    final database = _database;
+    if (database != null) {
+      await database.close();
       _database = null;
     }
   }
