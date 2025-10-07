@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'package:esp/base/ValueStream.dart';
 import 'package:esp/model/sensor_data.dart';
 import 'package:esp/service/database_service.dart';
 import 'package:flutter/material.dart';
@@ -46,7 +47,7 @@ class BluetoothService {
   bool isMock = false;
 
   // Streams
-  final _stateController = StreamController<BleConnectionState>.broadcast();
+  final _stateController = ValueStream<BleConnectionState>();
   final _dataController = StreamController<List<BleData>>.broadcast();
   final _errorController = StreamController<String?>.broadcast();
 
@@ -152,7 +153,7 @@ class BluetoothService {
 
       // Mock tracking state
       final prefs = await SharedPreferences.getInstance();
-      _isTracking = prefs.getBool('is_tracking') ?? false;;
+      _isTracking = prefs.getBool('is_tracking') ?? false;
 
       // Mock device ID and name
       _deviceId = "AA:BB:CC:DD:EE:FF";
@@ -213,7 +214,7 @@ class BluetoothService {
     }
 
     _emit(BleConnectionState.disconnected);
-    return true;
+    return false;
   }
 
   /// NEW METHOD: Request all required Bluetooth permissions
@@ -413,16 +414,17 @@ class BluetoothService {
     await Future.delayed(
       const Duration(milliseconds: 500),
     ); // simulate discovery delay
-
+    print("_mockSetupDevice");
     // Fake connection state listener
     _connSub?.cancel();
     _connSub =
-        Stream<BluetoothConnectionState>.periodic(
-          const Duration(seconds: 2),
-          (count) => count <= 2
-              ? BluetoothConnectionState.disconnected
-              : BluetoothConnectionState.connected,
-        ).listen((state) {
+        Stream<BluetoothConnectionState>.multi((controller) async {
+          // await Future.delayed(Duration(seconds: 2));
+          controller.add(BluetoothConnectionState.disconnected);
+          await Future.delayed(Duration(seconds: 2));
+          controller.add(BluetoothConnectionState.connected);
+        }
+        ).distinct().listen((state) {
           if (state == BluetoothConnectionState.disconnected) {
             _handleDisconnection();
           } else {
@@ -491,19 +493,26 @@ class BluetoothService {
     // Simulate enabling notifications delay
     await Future.delayed(const Duration(milliseconds: 200));
 
+    print("start mock notification");
     // Periodically emit fake data
-    _dataSub?.cancel();
-    _dataSub = Stream<List<int>>.periodic(
-      const Duration(seconds: 2),
-          (count) {
-        // Example: sending fake sensor/battery values
-        final message = "MockData_${count + 1}";
-        return utf8.encode(message);
-      },
-    ).listen((data) async {
-      final str = utf8.decode(data);
-      await _addData(str);
-    });
+    try {
+      await _dataSub?.cancel();
+      _dataSub = Stream<List<int>>.periodic(
+        const Duration(seconds: 2),
+            (count) {
+          // Example: sending fake sensor/battery values
+          final message = "MockData_${count + 1}";
+          print(message);
+          return utf8.encode(message);
+        },
+      ).listen((data) async {
+        final str = utf8.decode(data);
+        print(str);
+        await _addData(str);
+      });
+    } catch (e){
+      print(e.toString());
+    }
   }
 
   Future<void> _stopNotifications() async {
@@ -547,14 +556,14 @@ class BluetoothService {
 
   /// Mock addData (simulates BLE data)
   Future<void> _mockAddData(String mockData) async {
-    final bleData = BleData(timestamp: DateTime.now(), data: mockData);
+    final bleData = BleData(timestamp: DateTime.now(), data: mockData, batteryLevel: int.tryParse(mockData.split("_").last) ?? 0);
 
     _data.insert(0, bleData);
     await DatabaseService().insertOrUpdateSensorData(SensorData(hydrationLevel: 2, timestamp: bleData.timestamp.dateOnly));
     if (_data.length > 1000) {
       _data = _data.take(1000).toList();
     }
-
+    print("added mocked data");
     _dataController.add(List.from(_data));
   }
 
@@ -586,9 +595,9 @@ class BluetoothService {
     }
   }
 
-  void _handleDisconnection() {
+  Future<void> _handleDisconnection() async {
     _emit(BleConnectionState.disconnected);
-    _dataSub?.cancel();
+    await _dataSub?.cancel();
     // Auto-reconnect logic can be added here if needed
   }
 
