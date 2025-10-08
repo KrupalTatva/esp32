@@ -1,3 +1,5 @@
+import 'dart:developer';
+
 import 'package:esp/bloc/cubit/dashboard_cubit.dart';
 import 'package:esp/router/AppRouter.dart';
 import 'package:esp/screen/auth_wrapper.dart';
@@ -19,9 +21,12 @@ void callbackDispatcher() {
     print("Background task executed: $task");
 
     switch (task) {
-      case 'waterReminderTask':
+      case WaterReminderService.waterReminderTask:
         print("task notification");
         return WaterReminderService.showWaterReminderNotification();
+      case BackgroundWorker.bleTaskName:
+        print("get data");
+        return BackgroundWorker.getSensorData();
       default:
         return Future.value(true);
     }
@@ -33,18 +38,56 @@ Future<void> main() async {
 
   await DatabaseService().initialize();
   await BluetoothService.instance.initialize(isMock: kDebugMode);
-  await BackgroundWorker.initialize();
   await Workmanager().initialize(
     callbackDispatcher,
-    isInDebugMode: true,
   );
 
   await PrefsService.init();
   runApp(const MyApp());
 }
 
-class MyApp extends StatelessWidget {
+class MyApp extends StatefulWidget {
   const MyApp({super.key});
+
+  @override
+  State<MyApp> createState() => _MyAppState();
+}
+
+class _MyAppState extends State<MyApp>
+    with WidgetsBindingObserver {
+
+  @override
+  void initState() {
+    super.initState();
+    BackgroundWorker.stopBackgroundTask();
+    WidgetsBinding.instance.addObserver(this);
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    print("🔄 Lifecycle changed to: $state");
+    switch (state) {
+      case AppLifecycleState.inactive:
+        print("worker tracking ${BluetoothService.instance.isTracking}");
+        if (BluetoothService.instance.isTracking) {
+          BackgroundWorker.startBackgroundTask();
+        }
+        break;
+
+      case AppLifecycleState.resumed:
+        BackgroundWorker.stopBackgroundTask();
+        break;
+
+      default:
+        break;
+    }
+  }
 
   // This widget is the root of your application.
   @override

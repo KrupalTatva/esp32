@@ -3,7 +3,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'notification_service.dart';
 
 class WaterReminderService {
-  static const String taskName = 'waterReminderTask';
+  static const String waterReminderTask = 'waterReminderTask';
   static const String uniqueName = 'waterReminderWork';
 
   static Future<void> startWaterReminder(int intervalMin) async {
@@ -16,7 +16,7 @@ class WaterReminderService {
     // Register periodic task
     await Workmanager().registerPeriodicTask(
       uniqueName,
-      taskName,
+      waterReminderTask,
       initialDelay: Duration(seconds: 15),
       frequency: Duration(minutes: intervalMin),
       constraints: Constraints(

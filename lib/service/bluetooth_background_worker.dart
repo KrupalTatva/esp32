@@ -1,22 +1,21 @@
+import 'dart:developer';
+
+import 'package:flutter/foundation.dart';
 import 'package:workmanager/workmanager.dart';
 
 import 'bluetooth_service.dart';
+import 'database_service.dart';
 
 class BackgroundWorker {
   static const String bleTaskName = "ble_background_task";
-
-  static Future<void> initialize() async {
-    await Workmanager().initialize(
-      callbackDispatcher,
-      isInDebugMode: false,
-    );
-  }
+  static const String uniqueName = 'bleBackgroundWork';
 
   static Future<void> startBackgroundTask() async {
-    await Workmanager().registerPeriodicTask(
-      "1",
+    await Workmanager().registerOneOffTask(
+      uniqueName,
       bleTaskName,
-      frequency: const Duration(minutes: 15),
+      // frequency: Duration(minutes: 15),
+      initialDelay: const Duration(seconds: 10),
       constraints: Constraints(
         networkType: NetworkType.notRequired,
         requiresBatteryNotLow: false,
@@ -25,43 +24,35 @@ class BackgroundWorker {
         requiresStorageNotLow: false,
       ),
     );
+    print("worker stared");
   }
 
   static Future<void> stopBackgroundTask() async {
-    await Workmanager().cancelByUniqueName("1");
+    await Workmanager().cancelByUniqueName(uniqueName);
+    print("worker stopped");
   }
-}
 
-@pragma('vm:entry-point')
-void callbackDispatcher() {
-  Workmanager().executeTask((task, inputData) async {
+  static Future<bool> getSensorData() async {
     try {
       final service = BluetoothService.instance;
-
-      // Check if Bluetooth is ready
-      final ready = await service.checkBluetoothStatus();
+      await DatabaseService().initialize();
+      final ready = kDebugMode ? true : await service.checkBluetoothStatus();
 
       if (!ready) {
-        print('Background Worker: Bluetooth not ready');
+        ('Background Worker: Bluetooth not ready');
         return Future.value(false);
       }
+      await service.initialize(isMock: true, isBackground: true);
 
-      // Initialize and restore connection
-      await service.initialize();
-
-      // If tracking was enabled, ensure notifications are active
       if (service.isTracking) {
         print('Background Worker: Resuming tracking');
-        // Tracking state will be restored by initialize()
-        // No need to call startTracking again
       } else {
-        print('Background Worker: Device connected but not tracking');
+        log('Background Worker: Device connected but not tracking');
       }
-
       return Future.value(true);
     } catch (e) {
       print('Background Worker Error: $e');
       return Future.value(false);
     }
-  });
+  }
 }

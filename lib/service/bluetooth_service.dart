@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:math';
 import 'package:esp/base/ValueStream.dart';
 import 'package:esp/model/sensor_data.dart';
 import 'package:esp/service/database_service.dart';
@@ -45,6 +46,7 @@ class BluetoothService {
   BluetoothService._();
 
   bool isMock = false;
+  bool isBackground = false;
 
   // Streams
   final _stateController = ValueStream<BleConnectionState>();
@@ -89,11 +91,12 @@ class BluetoothService {
   // ============================================================
   // STEP 1: Initialize and restore state
   // ============================================================
-  Future<void> initialize({bool isMock = false}) async {
+  Future<void> initialize({bool isMock = false, bool isBackground = false}) async {
     _emit(BleConnectionState.checking);
     this.isMock = isMock;
+    this.isBackground = isBackground;
 
-    final restored = await _restoreState();
+    final restored = await restoreState();
 
     if (!restored) {
       // First time or no previous connection
@@ -102,10 +105,12 @@ class BluetoothService {
     }
   }
 
-  Future<bool> _restoreState() async {
+  Future<bool> restoreState() async {
     if(isMock){
-      return await _mockRestoreState();
+      print("mock_restoreState");
+      return await mockRestoreState();
     } else {
+      print("_restoreState");
       try {
         final prefs = await SharedPreferences.getInstance();
         _isTracking = prefs.getBool('is_tracking') ?? false;
@@ -146,7 +151,7 @@ class BluetoothService {
     }
   }
 
-  Future<bool> _mockRestoreState() async {
+  Future<bool> mockRestoreState() async {
     try {
       // Simulate a small delay
       await Future.delayed(const Duration(milliseconds: 500));
@@ -165,6 +170,7 @@ class BluetoothService {
       // Setup device and notifications (mocked)
       await _setupDevice();
       if (_isTracking) await _startNotifications();
+      print("_startNotifications");
 
       _emit(_isTracking ? BleConnectionState.tracking : BleConnectionState.connected);
 
@@ -414,7 +420,7 @@ class BluetoothService {
     await Future.delayed(
       const Duration(milliseconds: 500),
     ); // simulate discovery delay
-    print("_mockSetupDevice");
+    // print("_mockSetupDevice");
     // Fake connection state listener
     _connSub?.cancel();
     _connSub =
@@ -475,15 +481,27 @@ class BluetoothService {
     } else {
       if (_characteristic == null) return;
 
-      try {
-        await _characteristic!.setNotifyValue(true);
+      if(isBackground){
+        try {
+          await _characteristic!.setNotifyValue(true);
 
-        _dataSub = _characteristic!.onValueReceived.listen((data) async {
+          _dataSub = _characteristic!.onValueReceived.listen((data) async {
+            final str = utf8.decode(data);
+            await _addData(str);
+          });
+        } catch (e) {
+          _emitError("Failed to start notifications: $e");
+        }
+      } else {
+        try {
+          // Read the current value once
+          final data = await _characteristic!.read();
           final str = utf8.decode(data);
           await _addData(str);
-        });
-      } catch (e) {
-        _emitError("Failed to start notifications: $e");
+          print("Snapshot data: $str");
+        } catch (e) {
+          print("Error reading characteristic: $e");
+        }
       }
     }
   }
@@ -495,23 +513,28 @@ class BluetoothService {
 
     print("start mock notification");
     // Periodically emit fake data
-    try {
-      await _dataSub?.cancel();
-      _dataSub = Stream<List<int>>.periodic(
-        const Duration(seconds: 2),
-            (count) {
-          // Example: sending fake sensor/battery values
-          final message = "MockData_${count + 1}";
-          print(message);
-          return utf8.encode(message);
-        },
-      ).listen((data) async {
-        final str = utf8.decode(data);
-        print(str);
-        await _addData(str);
-      });
-    } catch (e){
-      print(e.toString());
+    if(isBackground){
+      await _addData("MockData_${Random().nextInt(100)}");
+    } else {
+      try {
+        await _dataSub?.cancel();
+        _dataSub = Stream<List<int>>.periodic(
+          const Duration(seconds: 2),
+              (count) {
+            // Example: sending fake sensor/battery values
+            final message = "MockData_${count + 1}";
+            // print(message);
+            return utf8.encode(message);
+          },
+        ).listen((data) async {
+          final str = utf8.decode(data);
+          print("listen mock notification");
+          // print(str);
+          await _addData(str);
+        });
+      } catch (e) {
+        print(e.toString());
+      }
     }
   }
 
@@ -540,6 +563,7 @@ class BluetoothService {
 
   Future<void> _addData(String data) async {
     if(isMock){
+      print("_mockAddData");
       await _mockAddData(data);
     }else {
       final bleData = BleData(timestamp: DateTime.now(), data: data);
@@ -563,8 +587,9 @@ class BluetoothService {
     if (_data.length > 1000) {
       _data = _data.take(1000).toList();
     }
-    print("added mocked data");
+    // print("added mocked data");
     _dataController.add(List.from(_data));
+    print("_mockAddData");
   }
 
   // ============================================================

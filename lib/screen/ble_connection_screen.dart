@@ -16,40 +16,8 @@ class BleConnectionScreen extends StatefulWidget {
   State<BleConnectionScreen> createState() => _BleConnectionScreenState();
 }
 
-class _BleConnectionScreenState extends State<BleConnectionScreen>
-    with WidgetsBindingObserver {
+class _BleConnectionScreenState extends State<BleConnectionScreen> {
   var bleCubit = BleCubit();
-
-  @override
-  void initState() {
-    super.initState();
-    WidgetsBinding.instance.addObserver(this);
-  }
-
-  @override
-  void dispose() {
-    WidgetsBinding.instance.removeObserver(this);
-    super.dispose();
-  }
-
-  @override
-  void didChangeAppLifecycleState(AppLifecycleState state) {
-      switch (state) {
-        case AppLifecycleState.paused:
-        case AppLifecycleState.inactive:
-          if (BluetoothService.instance.isTracking) {
-            BackgroundWorker.startBackgroundTask();
-          }
-          break;
-
-        case AppLifecycleState.resumed:
-          BackgroundWorker.stopBackgroundTask();
-          break;
-
-        default:
-          break;
-      }
-  }
 
   @override
   Widget build(BuildContext context) {
